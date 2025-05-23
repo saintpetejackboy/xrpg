@@ -1,0 +1,40 @@
+:root {
+    /* Core Colors */
+    --color-bg: #191c22;
+    --color-surface: #232630;
+    --color-surface-alt: #292c38;
+    --color-accent: #5299e0;
+    --color-accent-glow: rgba(82, 153, 224, 0.36);
+    /* for shadows */
+    --color-border: #2c313a;
+    --color-text: #f5f7fa;
+    --color-muted: #8793b4;
+    /* Gradients */
+    --gradient-accent: linear-gradient(90deg, #329fff 0%, #81aaff 100%);
+    --gradient-surface: radial-gradient(circle at 30% 30%, #232630 70%, #181a20 100%);
+    /* Shadows */
+    --shadow-default: 0 4px 12px 0 var(--color-accent-glow), 0 1.5px 4px #0008;
+    --shadow-glow: 0 0 12px 2px var(--color-accent-glow);
+    /* Opacities */
+    --opacity-ui: 0.96;
+    --opacity-modal: 0.98;
+    --opacity-active: 1;
+    --opacity-disabled: 0.56;
+    /* Scrollbar */
+    --scrollbar-thumb: #456483cc;
+    --scrollbar-track: #1e222c66;
+    --scrollbar-thumb-hover: #5299e0cc;
+}
+
+
+/* Theme modifiers for later (dark, light, etc.) */
+
+[data-theme="light"] {
+    --color-bg: #f5f5f8;
+    --color-surface: #fefeff;
+    --color-text: #1d2435;
+    --color-accent: #356ccc;
+    --color-accent-glow: rgba(53, 108, 204, 0.3);
+    --color-border: #eae6f7;
+    --gradient-accent: linear-gradient(90deg, #81aaff 0%, #329fff 100%);
+}

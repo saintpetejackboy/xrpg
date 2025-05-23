@@ -1,0 +1,87 @@
+// \\wsl.localhost\Ubuntu\var\www\xrpg\assets\css\theme\components.css
+/* Buttons */
+.button, button, [role="button"] {
+  color: var(--color-text);
+  background: var(--gradient-accent);
+  border: 1.5px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow-default);
+  transition: filter 0.2s, box-shadow 0.3s;
+  filter: brightness(var(--opacity-ui));
+}
+.button:active, button:active {
+  box-shadow: var(--shadow-glow);
+  filter: brightness(var(--opacity-active));
+}
+
+input, textarea, select {
+  background: var(--color-surface-alt);
+  border: 1.5px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: 0.35rem;
+  box-shadow: none;
+  padding: 0.6em;
+  transition: box-shadow 0.2s,border-color 0.3s;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-glow);
+}
+
+/* Cards, Modals, etc. */
+.card, .modal, .surface {
+  background: var(--gradient-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-default);
+  color: var(--color-text);
+  opacity: var(--opacity-modal);
+  overflow: hidden;
+}
+
+/* For all aria areas and role=region */
+[role="region"], [aria-label], .accessible-panel {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* Utility Class Examples */
+.bg-accent {
+  background: var(--gradient-accent);
+}
+.bg-surface {
+  background: var(--gradient-surface);
+}
+.text-accent {
+  color: var(--color-accent);
+}
+.text-muted {
+  color: var(--color-muted);
+}
+
+/* Demo for Updates area */
+.updates-area {
+  margin:1rem auto 2rem auto;
+  max-width:480px;
+  box-shadow: var(--shadow-default);
+  border: 2.5px solid var(--color-accent);
+}
+.update-entry {
+  display:flex;
+  align-items:center;
+  margin-bottom:0.5em;
+  font-size:0.97em;
+  line-height:1.4;
+}
+.update-time {
+  color: var(--color-muted);
+  margin-right:0.5em;
+  font-family: monospace;
+  opacity:0.8;
+}
+.update-emoji {
+  margin-right:0.5em;
+}
+.update-blurb {
+  color: var(--color-text);
+}
