@@ -1,40 +1,148 @@
+/* XRPG CSS Variables - The Foundation of Magic */
+
 :root {
-    /* Core Colors */
+    /* Core Colors - The Palette of Power */
     --color-bg: #191c22;
     --color-surface: #232630;
     --color-surface-alt: #292c38;
     --color-accent: #5299e0;
     --color-accent-glow: rgba(82, 153, 224, 0.36);
-    /* for shadows */
+    --color-accent-dim: rgba(82, 153, 224, 0.12);
     --color-border: #2c313a;
     --color-text: #f5f7fa;
     --color-muted: #8793b4;
-    /* Gradients */
-    --gradient-accent: linear-gradient(90deg, #329fff 0%, #81aaff 100%);
+    --color-success: #10b981;
+    --color-warning: #f59e0b;
+    --color-danger: #ef4444;
+    --color-info: #3b82f6;
+    
+    /* Gradients - Visual Enchantments */
+    --gradient-accent: linear-gradient(135deg, #329fff 0%, #81aaff 100%);
     --gradient-surface: radial-gradient(circle at 30% 30%, #232630 70%, #181a20 100%);
-    /* Shadows */
-    --shadow-default: 0 4px 12px 0 var(--color-accent-glow), 0 1.5px 4px #0008;
-    --shadow-glow: 0 0 12px 2px var(--color-accent-glow);
-    /* Opacities */
+    --gradient-dark: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.1) 100%);
+    --gradient-light: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
+    --gradient-glow: radial-gradient(circle at center, var(--color-accent-glow) 0%, transparent 70%);
+    --gradient-epic: linear-gradient(135deg, #9333ea 0%, #6366f1 50%, #3b82f6 100%);
+    --gradient-legendary: linear-gradient(135deg, #fbbf24 0%, #f97316 50%, #dc2626 100%);
+    
+    /* Shadows - Depth and Drama */
+    --shadow-default: 0 4px 12px 0 var(--color-accent-glow), 0 1.5px 4px rgba(0,0,0,0.24);
+    --shadow-glow: 0 0 20px 2px var(--color-accent-glow), 0 0 40px 4px var(--color-accent-dim);
+    --shadow-subtle: 0 2px 4px rgba(0,0,0,0.1);
+    --shadow-medium: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+    --shadow-large: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+    --shadow-epic: 0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.04);
+    --shadow-inset: inset 0 2px 4px 0 rgba(0,0,0,0.06);
+    --shadow-float: 0 0 0 1px rgba(0,0,0,0.05), 0 10px 40px -10px rgba(0,0,0,0.4);
+    
+    /* Opacities - Transparency Levels */
     --opacity-ui: 0.96;
     --opacity-modal: 0.98;
     --opacity-active: 1;
     --opacity-disabled: 0.56;
-    /* Scrollbar */
+    --opacity-hover: 0.88;
+    --opacity-ghost: 0.12;
+    --opacity-faint: 0.04;
+    
+    /* Scrollbar - Smooth Scrolling Style */
     --scrollbar-thumb: #456483cc;
     --scrollbar-track: #1e222c66;
     --scrollbar-thumb-hover: #5299e0cc;
+    
+    /* Font Stacks - Typography Arsenal */
+    --font-sans: system-ui, -apple-system, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'Consolas', 'Monaco', 'Andale Mono', 'Ubuntu Mono', 'Courier New', monospace;
+    --font-game: 'Georgia', 'Cambria', 'Times New Roman', Times, serif;
+    --font-display: 'Arial Black', 'Avenir Next', 'Avenir', 'Impact', sans-serif;
+    
+    /* Timing Functions - Animation Curves */
+    --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    
+    /* Durations - Animation Speeds */
+    --duration-instant: 75ms;
+    --duration-fast: 150ms;
+    --duration-normal: 300ms;
+    --duration-slow: 500ms;
+    --duration-epic: 1000ms;
+    
+    /* Z-Index Layers - Stacking Order */
+    --z-base: 1;
+    --z-dropdown: 10;
+    --z-sticky: 20;
+    --z-fixed: 30;
+    --z-modal-backdrop: 40;
+    --z-modal: 50;
+    --z-popover: 60;
+    --z-tooltip: 70;
+    --z-notification: 80;
+    --z-max: 99;
+    
+    /* Spacing Scale - Consistent Gaps */
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
+    --space-2xl: 3rem;
+    --space-3xl: 4rem;
+    
+    /* Border Radius Scale */
+    --radius-sm: 0.25rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+    --radius-2xl: 1.5rem;
+    --radius-full: 9999px;
+    
+    /* Blur Effects */
+    --blur-sm: blur(4px);
+    --blur-md: blur(8px);
+    --blur-lg: blur(16px);
+    --blur-xl: blur(24px);
 }
 
-
-/* Theme modifiers for later (dark, light, etc.) */
-
+/* Light Theme Overrides */
 [data-theme="light"] {
-    --color-bg: #f5f5f8;
-    --color-surface: #fefeff;
-    --color-text: #1d2435;
-    --color-accent: #356ccc;
-    --color-accent-glow: rgba(53, 108, 204, 0.3);
-    --color-border: #eae6f7;
-    --gradient-accent: linear-gradient(90deg, #81aaff 0%, #329fff 100%);
+    --color-bg: #f8fafc;
+    --color-surface: #ffffff;
+    --color-surface-alt: #f1f5f9;
+    --color-accent: #3b82f6;
+    --color-accent-glow: rgba(59, 130, 246, 0.3);
+    --color-accent-dim: rgba(59, 130, 246, 0.08);
+    --color-border: #e2e8f0;
+    --color-text: #0f172a;
+    --color-muted: #64748b;
+    --gradient-accent: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+    --gradient-surface: radial-gradient(circle at 30% 30%, #ffffff 70%, #f8fafc 100%);
+    --scrollbar-track: #f1f5f9;
+    --scrollbar-thumb: #cbd5e1cc;
+    --scrollbar-thumb-hover: #3b82f6cc;
+    
+    /* Adjust shadows for light theme */
+    --shadow-default: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.05);
+    --shadow-glow: 0 0 15px var(--color-accent-glow), 0 0 30px var(--color-accent-dim);
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+    :root {
+        --color-border: #4a5568;
+        --shadow-default: 0 0 0 2px var(--color-accent);
+        --shadow-glow: 0 0 0 4px var(--color-accent);
+    }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --duration-instant: 0ms;
+        --duration-fast: 0ms;
+        --duration-normal: 0ms;
+        --duration-slow: 0ms;
+        --duration-epic: 0ms;
+    }
 }

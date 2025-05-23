@@ -1,0 +1,14 @@
+# Environment
+.env
+
+# Node/Composer/symfony vendors
+/vendor/
+/node_modules/
+/thirdparty/
+
+/db/*.log
+/db/*.bak
+
+# OS
+.DS_Store
+Thumbs.db
