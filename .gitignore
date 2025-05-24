@@ -4,7 +4,7 @@
 # Node/Composer/symfony vendors
 /vendor/
 /node_modules/
-/thirdparty/
+/thirdparty/vendor/
 
 /db/*.log
 /db/*.bak
