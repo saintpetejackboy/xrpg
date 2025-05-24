@@ -1,349 +1,427 @@
-// Helper to convert URL-safe base64 to standard base64
-function urlBase64ToBase64(str) {
-    if (!str || typeof str !== 'string') {
-        console.error('urlBase64ToBase64: Invalid input:', str);
-        return '';
-    }
-    str = str.replace(/-/g, '+').replace(/_/g, '/');
-    // Pad with = to make length a multiple of 4
-    while (str.length % 4) str += '=';
-    return str;
-}
+/**
+ * Modern Passkey Authentication System
+ * Clean, efficient, and user-friendly
+ */
 
-// Helper to convert ArrayBuffer to base64url
-function arrayBufferToBase64Url(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-// Enhanced message display with better visibility
-function showMessage(message, isError = false) {
-    // Remove any existing message
-    const existingMessage = document.getElementById('auth-message');
-    if (existingMessage) {
-        existingMessage.remove();
-    }
-    
-    // Create new message element
-    const messageEl = document.createElement('div');
-    messageEl.id = 'auth-message';
-    messageEl.className = 'auth-message-toast';
-    messageEl.textContent = message;
-    
-    // Apply enhanced styles
-    messageEl.style.cssText = `
-        position: fixed !important;
-        top: 20px !important;
-        right: 20px !important;
-        z-index: 999999 !important;
-        padding: 16px 24px !important;
-        border-radius: 12px !important;
-        color: white !important;
-        font-weight: 600 !important;
-        font-size: 14px !important;
-        max-width: 350px !important;
-        min-width: 200px !important;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
-        border: 2px solid rgba(255,255,255,0.2) !important;
-        backdrop-filter: blur(10px) !important;
-        transform: translateX(400px) !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        font-family: system-ui, -apple-system, sans-serif !important;
-        line-height: 1.4 !important;
-        word-wrap: break-word !important;
-        pointer-events: auto !important;
-        opacity: 0.95 !important;
-    `;
-    
-    // Set background color based on message type
-    messageEl.style.backgroundColor = isError ? '#dc3545 !important' : '#28a745 !important';
-    
-    // Add to document
-    document.body.appendChild(messageEl);
-    
-    // Trigger animation
-    requestAnimationFrame(() => {
-        messageEl.style.transform = 'translateX(0) !important';
-        messageEl.style.opacity = '1 !important';
-    });
-    
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-        messageEl.style.transform = 'translateX(400px) !important';
-        messageEl.style.opacity = '0 !important';
-        setTimeout(() => {
-            if (messageEl.parentNode) {
-                messageEl.remove();
-            }
-        }, 300);
-    }, 5000);
-    
-    console.log(`Auth message (${isError ? 'ERROR' : 'INFO'}): ${message}`);
-}
-
-// Registration
-async function registerPasskey(username) {
-    if (!username || username.trim().length < 3) {
-        showMessage('Username must be at least 3 characters long', true);
-        return false;
+class PasskeyAuth {
+    constructor() {
+        this.currentMode = 'login';
+        this.isProcessing = false;
+        this.init();
     }
 
-    try {
-        showMessage('Starting registration...');
-
-        // 1. Request registration options from backend
-        const res = await fetch('/auth/register.php', {
-            method: 'POST',
-            body: new URLSearchParams({username: username.trim()})
-        });
-
-        let responseData;
-        try {
-            responseData = await res.json();
-        } catch (jsonError) {
-            console.error('Failed to parse registration response as JSON:', jsonError);
-            showMessage('Server error: Invalid response format', true);
-            return false;
-        }
-
-        if (!res.ok) {
-            showMessage(`Registration failed: ${responseData.error || 'Unknown error'}`, true);
-            if (responseData.details) {
-                console.error('Registration error details:', responseData.details);
-            }
-            return false;
-        }
-
-        const options = responseData;
-        console.log('Registration options received:', options);
-
-        // 2. Convert base64url encoded data to Uint8Array for WebAuthn API
-        if (!options.challenge) {
-            throw new Error('No challenge received from server');
-        }
-        
-        options.challenge = Uint8Array.from(
-            atob(urlBase64ToBase64(options.challenge)), 
-            c => c.charCodeAt(0)
-        );
-
-        if (!options.user || !options.user.id) {
-            throw new Error('No user ID received from server');
-        }
-
-        options.user.id = Uint8Array.from(
-            atob(urlBase64ToBase64(options.user.id)), 
-            c => c.charCodeAt(0)
-        );
-
-        showMessage('Please complete the security key/biometric prompt...');
-
-        // 3. Call browser WebAuthn API
-        const credential = await navigator.credentials.create({publicKey: options});
-        
-        if (!credential) {
-            throw new Error('No credential returned from authenticator');
-        }
-
-        console.log('Credential created:', credential);
-
-        // 4. Convert ArrayBuffer data to base64url for JSON transmission
-        const credentialData = {
-            id: credential.id,
-            rawId: arrayBufferToBase64Url(credential.rawId),
-            type: credential.type,
-            response: {
-                attestationObject: arrayBufferToBase64Url(credential.response.attestationObject),
-                clientDataJSON: arrayBufferToBase64Url(credential.response.clientDataJSON)
-            }
-        };
-
-        showMessage('Saving registration...');
-
-        // 5. Send result to backend
-        const res2 = await fetch('/auth/register.php', {
-            method: 'PUT',
-            body: JSON.stringify(credentialData),
-            headers: {'Content-Type': 'application/json'}
-        });
-
-        let result;
-        try {
-            result = await res2.json();
-        } catch (jsonError) {
-            console.error('Failed to parse registration save response as JSON:', jsonError);
-            showMessage('Server error: Invalid response format', true);
-            return false;
-        }
-
-        if (res2.ok && result.ok) {
-            showMessage(`✅ Registration successful! Welcome, ${result.username}!`);
-            return true;
+    init() {
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.setupEventListeners());
         } else {
-            showMessage(`Registration failed: ${result.error || 'Unknown error'}`, true);
-            if (result.details) {
-                console.error('Registration error details:', result.details);
-            }
-            return false;
+            this.setupEventListeners();
         }
-
-    } catch (error) {
-        console.error('Registration error:', error);
-        if (error.name === 'NotAllowedError') {
-            showMessage('Registration was cancelled or timed out', true);
-        } else if (error.name === 'NotSupportedError') {
-            showMessage('WebAuthn is not supported by this browser', true);
-        } else {
-            showMessage(`Registration failed: ${error.message}`, true);
-        }
-        return false;
-    }
-}
-
-// Authentication (Login)
-async function loginPasskey(username) {
-    if (!username || username.trim().length === 0) {
-        showMessage('Please enter a username', true);
-        return false;
     }
 
-    try {
-        showMessage('Starting login...');
+    setupEventListeners() {
+        const modal = document.getElementById('auth-modal');
+        if (!modal) return;
 
-        // 1. Request authentication options from backend
-        const res = await fetch('/auth/login.php', {
-            method: 'POST',
-            body: new URLSearchParams({username: username.trim()})
-        });
+        const usernameInput = modal.querySelector('#username');
+        const actionButton = modal.querySelector('#auth-action-btn');
+        const switchButton = modal.querySelector('#auth-switch-btn');
+        const closeButton = modal.querySelector('#auth-close-btn');
 
-        let responseData;
-        try {
-            responseData = await res.json();
-        } catch (jsonError) {
-            console.error('Failed to parse login response as JSON:', jsonError);
-            console.error('Response status:', res.status);
-            console.error('Response headers:', res.headers);
-            
-            // Try to get the actual response text for debugging
-            const responseText = await res.clone().text();
-            console.error('Raw response text:', responseText);
-            
-            showMessage('Server error: Invalid response format. Check console for details.', true);
-            return false;
-        }
-
-        if (!res.ok) {
-            showMessage(`Login failed: ${responseData.error || 'Unknown error'}`, true);
-            if (responseData.details) {
-                console.error('Login error details:', responseData.details);
-            }
-            return false;
-        }
-
-        const options = responseData;
-        console.log('Authentication options received:', options);
-
-        // 2. Convert base64url encoded data to Uint8Array for WebAuthn API
-        if (!options.challenge) {
-            throw new Error('No challenge received from server');
-        }
-
-        options.challenge = Uint8Array.from(
-            atob(urlBase64ToBase64(options.challenge)), 
-            c => c.charCodeAt(0)
-        );
-
-        if (options.allowCredentials && Array.isArray(options.allowCredentials)) {
-            options.allowCredentials = options.allowCredentials.map(cred => {
-                if (!cred.id) {
-                    throw new Error('Invalid credential ID from server');
-                }
-                return {
-                    ...cred,
-                    id: Uint8Array.from(
-                        atob(urlBase64ToBase64(cred.id)), 
-                        c => c.charCodeAt(0)
-                    )
-                };
+        // Setup button handlers
+        if (actionButton) {
+            actionButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.handleAuth();
             });
         }
 
-        showMessage('Please complete the security key/biometric prompt...');
-
-        // 3. Call browser WebAuthn API
-        const assertion = await navigator.credentials.get({publicKey: options});
-        
-        if (!assertion) {
-            throw new Error('No assertion returned from authenticator');
+        if (switchButton) {
+            switchButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.switchMode();
+            });
         }
 
-        console.log('Assertion created:', assertion);
+        if (closeButton) {
+            closeButton.addEventListener('click', () => this.closeModal());
+        }
 
-        // 4. Convert ArrayBuffer data to base64url for JSON transmission
-        const assertionData = {
-            id: assertion.id,
-            rawId: arrayBufferToBase64Url(assertion.rawId),
-            type: assertion.type,
-            response: {
-                authenticatorData: arrayBufferToBase64Url(assertion.response.authenticatorData),
-                clientDataJSON: arrayBufferToBase64Url(assertion.response.clientDataJSON),
-                signature: arrayBufferToBase64Url(assertion.response.signature),
-                userHandle: assertion.response.userHandle ? 
-                    arrayBufferToBase64Url(assertion.response.userHandle) : null
+        // Enter key support
+        if (usernameInput) {
+           
+
+            // Clear errors when user types
+            usernameInput.addEventListener('input', () => {
+                this.clearStatus();
+            });
+        }
+
+        // Close on backdrop click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                this.closeModal();
             }
-        };
-
-        showMessage('Verifying login...');
-
-        // 5. Send result to backend
-        const res2 = await fetch('/auth/login.php', {
-            method: 'PUT',
-            body: JSON.stringify(assertionData),
-            headers: {'Content-Type': 'application/json'}
         });
 
-        let result;
-        try {
-            result = await res2.json();
-        } catch (jsonError) {
-            console.error('Failed to parse login verification response as JSON:', jsonError);
-            console.error('Response status:', res2.status);
-            
-            // Try to get the actual response text for debugging
-            const responseText = await res2.clone().text();
-            console.error('Raw response text:', responseText);
-            
-            showMessage('Server error: Invalid response format. Check console for details.', true);
-            return false;
-        }
-
-        if (res2.ok && result.ok) {
-            showMessage('✅ Login successful! Redirecting...');
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
-            return true;
-        } else {
-            showMessage(`Login failed: ${result.error || 'Unknown error'}`, true);
-            if (result.details) {
-                console.error('Login error details:', result.details);
+        // ESC key support
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.open) {
+                this.closeModal();
             }
-            return false;
+        });
+    }
+
+    async handleAuth() {
+        if (this.isProcessing) return;
+
+        const username = this.getUsername();
+        if (!this.validateUsername(username)) return;
+
+        this.isProcessing = true;
+        this.setButtonLoading(true);
+        this.clearStatus();
+
+        try {
+            if (this.currentMode === 'register') {
+                await this.register(username);
+            } else {
+                await this.login(username);
+            }
+        } catch (error) {
+            console.error('Auth error:', error);
+            this.showStatus('error', error.message || 'Authentication failed');
+        } finally {
+            this.isProcessing = false;
+            this.setButtonLoading(false);
+        }
+    }
+
+    async register(username) {
+        this.showStatus('info', 'Starting registration...');
+
+        // Step 1: Get registration options
+        const optionsResponse = await this.fetchWithTimeout('/auth/register.php', {
+            method: 'POST',
+            body: new URLSearchParams({ username })
+        });
+
+        if (!optionsResponse.ok) {
+            const error = await optionsResponse.json();
+            throw new Error(error.error || 'Registration failed');
         }
 
-    } catch (error) {
-        console.error('Login error:', error);
-        if (error.name === 'NotAllowedError') {
-            showMessage('Login was cancelled or timed out', true);
-        } else if (error.name === 'NotSupportedError') {
-            showMessage('WebAuthn is not supported by this browser', true);
-        } else {
-            showMessage(`Login failed: ${error.message}`, true);
+        const options = await optionsResponse.json();
+        this.prepareCredentialOptions(options);
+
+        this.showStatus('info', 'Please complete the security key or biometric prompt...');
+
+        // Step 2: Create credential
+        const credential = await navigator.credentials.create({ publicKey: options });
+        if (!credential) {
+            throw new Error('No credential created');
         }
-        return false;
+
+        this.showStatus('info', 'Saving registration...');
+
+        // Step 3: Save credential
+        const credentialData = this.formatCredentialForTransmission(credential);
+        const saveResponse = await this.fetchWithTimeout('/auth/register.php', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(credentialData)
+        });
+
+        if (!saveResponse.ok) {
+            const error = await saveResponse.json();
+            throw new Error(error.error || 'Failed to save registration');
+        }
+
+        const result = await saveResponse.json();
+        this.showStatus('success', `✅ Account created successfully! Welcome, ${result.username}!`);
+        
+        // Auto-switch to login mode after successful registration
+        setTimeout(() => {
+            this.currentMode = 'login';
+            this.updateUI();
+            this.clearStatus();
+        }, 2000);
+    }
+
+    async login(username) {
+        this.showStatus('info', 'Starting login...');
+
+        // Step 1: Get authentication options
+        const optionsResponse = await this.fetchWithTimeout('/auth/login.php', {
+            method: 'POST',
+            body: new URLSearchParams({ username })
+        });
+
+        if (!optionsResponse.ok) {
+            const error = await optionsResponse.json();
+            if (optionsResponse.status === 404) {
+                this.showStatus('error', 'Username not found. Would you like to create an account?');
+                // Auto-suggest switching to register mode
+                setTimeout(() => {
+                    this.currentMode = 'register';
+                    this.updateUI();
+                    this.showStatus('info', 'Switched to account creation mode');
+                }, 3000);
+                return;
+            }
+            throw new Error(error.error || 'Login failed');
+        }
+
+        const options = await optionsResponse.json();
+        this.prepareCredentialOptions(options);
+
+        this.showStatus('info', 'Please complete the security key or biometric prompt...');
+
+        // Step 2: Get assertion
+        const assertion = await navigator.credentials.get({ publicKey: options });
+        if (!assertion) {
+            throw new Error('No assertion created');
+        }
+
+        this.showStatus('info', 'Verifying login...');
+
+        // Step 3: Verify assertion
+        const assertionData = this.formatAssertionForTransmission(assertion);
+        const verifyResponse = await this.fetchWithTimeout('/auth/login.php', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(assertionData)
+        });
+
+        if (!verifyResponse.ok) {
+            const error = await verifyResponse.json();
+            throw new Error(error.error || 'Login verification failed');
+        }
+
+        const result = await verifyResponse.json();
+        this.showStatus('success', '✅ Login successful! Redirecting...');
+        
+        // Redirect after successful login
+        setTimeout(() => {
+            window.location.reload();
+        }, 1500);
+    }
+
+    // Helper methods
+    getUsername() {
+        const input = document.querySelector('#username');
+        return input ? input.value.trim() : '';
+    }
+
+    validateUsername(username) {
+        if (!username) {
+            this.showStatus('error', 'Please enter a username');
+            this.focusUsername();
+            return false;
+        }
+        if (username.length < 3) {
+            this.showStatus('error', 'Username must be at least 3 characters');
+            this.focusUsername();
+            return false;
+        }
+        if (username.length > 50) {
+            this.showStatus('error', 'Username must be less than 50 characters');
+            this.focusUsername();
+            return false;
+        }
+        return true;
+    }
+
+    focusUsername() {
+        const input = document.querySelector('#username');
+        if (input) input.focus();
+    }
+
+    prepareCredentialOptions(options) {
+        // Convert base64url to Uint8Array for browser API
+        if (options.challenge) {
+            options.challenge = this.base64urlToUint8Array(options.challenge);
+        }
+        if (options.user?.id) {
+            options.user.id = this.base64urlToUint8Array(options.user.id);
+        }
+        if (options.allowCredentials) {
+            options.allowCredentials = options.allowCredentials.map(cred => ({
+                ...cred,
+                id: this.base64urlToUint8Array(cred.id)
+            }));
+        }
+    }
+
+    formatCredentialForTransmission(credential) {
+        return {
+            id: credential.id,
+            rawId: this.arrayBufferToBase64url(credential.rawId),
+            type: credential.type,
+            response: {
+                attestationObject: this.arrayBufferToBase64url(credential.response.attestationObject),
+                clientDataJSON: this.arrayBufferToBase64url(credential.response.clientDataJSON)
+            }
+        };
+    }
+
+    formatAssertionForTransmission(assertion) {
+        return {
+            id: assertion.id,
+            rawId: this.arrayBufferToBase64url(assertion.rawId),
+            type: assertion.type,
+            response: {
+                authenticatorData: this.arrayBufferToBase64url(assertion.response.authenticatorData),
+                clientDataJSON: this.arrayBufferToBase64url(assertion.response.clientDataJSON),
+                signature: this.arrayBufferToBase64url(assertion.response.signature),
+                userHandle: assertion.response.userHandle ? 
+                    this.arrayBufferToBase64url(assertion.response.userHandle) : null
+            }
+        };
+    }
+
+    // Encoding utilities
+    base64urlToUint8Array(str) {
+        if (!str) return new Uint8Array();
+        // Convert base64url to base64
+        str = str.replace(/-/g, '+').replace(/_/g, '/');
+        // Add padding
+        while (str.length % 4) str += '=';
+        
+        const binary = atob(str);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+    }
+
+    arrayBufferToBase64url(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
+
+    // UI Management
+    switchMode() {
+        this.currentMode = this.currentMode === 'login' ? 'register' : 'login';
+        this.updateUI();
+        this.clearStatus();
+        this.focusUsername();
+    }
+
+    updateUI() {
+        const title = document.querySelector('#auth-title');
+        const subtitle = document.querySelector('#auth-subtitle');
+        const actionButton = document.querySelector('#auth-action-btn');
+        const switchButton = document.querySelector('#auth-switch-btn');
+
+        if (this.currentMode === 'register') {
+            if (title) title.textContent = 'Create Account';
+            if (subtitle) subtitle.textContent = 'Join XRPG with secure passkey authentication';
+            if (actionButton) {
+                actionButton.innerHTML = '<span class="passkey-icon">🆕</span>Create Account';
+            }
+            if (switchButton) switchButton.textContent = 'Already have an account? Sign in';
+        } else {
+            if (title) title.textContent = 'Welcome Back';
+            if (subtitle) subtitle.textContent = 'Sign in to continue your adventure';
+            if (actionButton) {
+                actionButton.innerHTML = '<span class="passkey-icon">🔑</span>Sign In';
+            }
+            if (switchButton) switchButton.textContent = "Don't have an account? Create one";
+        }
+    }
+
+    setButtonLoading(loading) {
+        const button = document.querySelector('#auth-action-btn');
+        if (!button) return;
+
+        if (loading) {
+            button.classList.add('auth-button-loading');
+            button.disabled = true;
+        } else {
+            button.classList.remove('auth-button-loading');
+            button.disabled = false;
+        }
+    }
+
+    showStatus(type, message) {
+        let statusEl = document.querySelector('#auth-status');
+        
+        if (!statusEl) {
+            statusEl = document.createElement('div');
+            statusEl.id = 'auth-status';
+            statusEl.className = 'auth-status';
+            
+         const form = modal.querySelector('#auth-form');
+
+			if (form) {
+			  form.addEventListener('submit', e => {
+				e.preventDefault();         // ⬅️ stop the dialog from "submitting"
+				if (!this.isProcessing) {
+				  this.handleAuth();        // ⬅️ run your authentication
+				}
+			  });
+			}
+        }
+
+        statusEl.className = `auth-status auth-status-${type}`;
+        statusEl.textContent = message;
+        statusEl.style.display = 'block';
+
+        // Auto-clear success messages
+        if (type === 'success') {
+            setTimeout(() => this.clearStatus(), 5000);
+        }
+
+        console.log(`Auth ${type.toUpperCase()}: ${message}`);
+    }
+
+    clearStatus() {
+        const statusEl = document.querySelector('#auth-status');
+        if (statusEl) {
+            statusEl.style.display = 'none';
+        }
+    }
+
+    closeModal() {
+        const modal = document.getElementById('auth-modal');
+        if (modal && modal.close) {
+            modal.close();
+        }
+        this.clearStatus();
+        this.isProcessing = false;
+        this.setButtonLoading(false);
+    }
+
+    async fetchWithTimeout(url, options, timeout = 10000) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        
+        try {
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            return response;
+        } catch (error) {
+            clearTimeout(timeoutId);
+            if (error.name === 'AbortError') {
+                throw new Error('Request timed out');
+            }
+            throw error;
+        }
     }
 }
+
+// Initialize when DOM is ready
+const passkeyAuth = new PasskeyAuth();
+
+// Expose global functions for backward compatibility
+window.registerPasskey = (username) => passkeyAuth.register(username);
+window.loginPasskey = (username) => passkeyAuth.login(username);

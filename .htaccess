@@ -1,0 +1,44 @@
+# ───────────────────────────────────────────────────────────
+# XRPG site rules
+# ───────────────────────────────────────────────────────────
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # (Optional) Redirect HTTP→HTTPS in production
+  # RewriteCond %{HTTPS} off
+  # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # Don’t rewrite true static assets
+  RewriteCond %{REQUEST_URI} \.(css|js|png|jpe?g|gif|ico|svg|woff2?|ttf|eot)$ [NC]
+  RewriteRule ^ - [L]
+
+  # If it’s not a real file or directory, send to index.php
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+<IfModule mod_headers.c>
+  # Cache-busting for static assets
+  <FilesMatch "\.(css|js|png|jpe?g|gif|ico|svg|woff2?|ttf|eot)$">
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+
+  # Security headers
+  Header always set X-Frame-Options          "SAMEORIGIN"
+  Header always set X-Content-Type-Options   "nosniff"
+  Header always set X-XSS-Protection         "1; mode=block"
+  Header always set Referrer-Policy          "strict-origin-when-cross-origin"
+</IfModule>
+
+# Block only sensitive server config
+<Files ".env">
+  Require all denied
+</Files>
+
+# Let your app handle 403/404 via index.php
+ErrorDocument 403 /index.php
+ErrorDocument 404 /index.php
