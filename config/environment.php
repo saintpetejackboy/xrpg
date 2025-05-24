@@ -1,16 +1,12 @@
 <?php
-// Environment Configuration for Passkey Auth, Domains, etc.
-// Change these as needed for local/server deployments.
+require_once __DIR__ . '/../thirdparty/vendor/autoload.php';
+
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../');
+$dotenv->load();
 
 return [
-    // Full base URL for the app, used for WebAuthn origins
-    'base_url' => 'http://localhost/xrpg',
-    // Origin (protocol + domain + optional port), for WebAuthn
-    'webauthn_origin' => 'http://localhost',
-    // Relying Party Name
-    'rp_name' => 'XRPG',
-    // Relying Party ID (usually domain, used by WebAuthn format)
-    'rp_id' => 'localhost',
-
-    // Any other config you want here!
+    'base_url' => $_ENV['DOMAIN_URL'],
+    'webauthn_origin' => $_ENV['WEBAUTHN_ORIGIN'],
+    'rp_id' => $_ENV['RP_ID'],
+    'rp_name' => $_ENV['RP_NAME'],
 ];

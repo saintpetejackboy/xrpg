@@ -1,12 +1,15 @@
-<?php
-// XRPG Landing Page with Theme Customizer and Updates
-?><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>XRPG - Customize Your Adventure</title>
     <link rel="stylesheet" href="/assets/css/theme.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/ico/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/ico/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/ico/favicon-16x16.png">
+    <link rel="shortcut icon" href="/assets/ico/favicon.ico">
+    <meta name="theme-color" content="#ffffff">
     <style>
         /* Page-specific layout styles */
         .hidden { display: none !important; }
@@ -72,6 +75,53 @@
             margin-top: 1rem;
             font-size: 0.875rem;
         }
+
+        /* Enhanced toast message styles */
+        .auth-message-toast {
+            position: fixed !important;
+            top: 20px !important;
+            right: 20px !important;
+            z-index: 2147483647 !important; /* Maximum z-index */
+            padding: 16px 24px !important;
+            border-radius: 12px !important;
+            color: white !important;
+            font-weight: 600 !important;
+            font-size: 14px !important;
+            max-width: 350px !important;
+            min-width: 200px !important;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+            border: 2px solid rgba(255,255,255,0.2) !important;
+            backdrop-filter: blur(10px) !important;
+            transform: translateX(400px) !important;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            font-family: system-ui, -apple-system, sans-serif !important;
+            line-height: 1.4 !important;
+            word-wrap: break-word !important;
+            pointer-events: auto !important;
+            opacity: 0.95 !important;
+        }
+        
+        .auth-message-toast.show {
+            transform: translateX(0) !important;
+            opacity: 1 !important;
+        }
+
+        /* Ensure toast appears above everything */
+        .auth-message-toast::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* Animation keyframes */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
         
     </style>
 </head>
@@ -95,36 +145,6 @@
                 <span class="side-nav-icon">📖</span>
                 <span class="side-nav-text">Guide</span>
             </a>
-            <!-- These would be shown when logged in:
-            <a href="#" class="side-nav-item" title="Profile">
-                <span class="side-nav-icon">👤</span>
-                <span class="side-nav-text">Profile</span>
-            </a>
-            <a href="#" class="side-nav-item" title="Dungeons">
-                <span class="side-nav-icon">🏰</span>
-                <span class="side-nav-text">Dungeons</span>
-            </a>
-            <a href="#" class="side-nav-item" title="Shop">
-                <span class="side-nav-icon">🛍️</span>
-                <span class="side-nav-text">Shop</span>
-            </a>
-            <a href="#" class="side-nav-item" title="Equipment">
-                <span class="side-nav-icon">⚔️</span>
-                <span class="side-nav-text">Equipment</span>
-            </a>
-            <a href="#" class="side-nav-item" title="House">
-                <span class="side-nav-icon">🏡</span>
-                <span class="side-nav-text">House</span>
-            </a>
-            <a href="#" class="side-nav-item" title="Leaderboard">
-                <span class="side-nav-icon">🏆</span>
-                <span class="side-nav-text">Leaderboard</span>
-            </a>
-            <a href="#" class="side-nav-item" title="Stats">
-                <span class="side-nav-icon">📊</span>
-                <span class="side-nav-text">Stats</span>
-            </a>
-            -->
         </div>
     </nav>
 
@@ -532,12 +552,179 @@
     </dialog>
 
     <script src="/assets/js/theme.js"></script>
+    <script src="/assets/js/passkey.js"></script>
     <script>
         // Load updates when page loads
         loadUpdates();
-        
-        // Refresh updates every 30 seconds
         setInterval(loadUpdates, 30000);
+
+        // Enhanced modal status functions
+        function showModalStatus(modalId, message, type = 'info') {
+            let statusEl = document.querySelector(`#${modalId} .modal-status`);
+            if (!statusEl) {
+                statusEl = document.createElement('div');
+                statusEl.className = 'modal-status';
+                statusEl.style.cssText = `
+                    margin-top: 1rem; padding: 0.75rem; border-radius: 0.5rem;
+                    font-weight: 500; text-align: center;
+                `;
+                const modalBody = document.querySelector(`#${modalId} .modal-body`);
+                if (modalBody) modalBody.appendChild(statusEl);
+            }
+            
+            statusEl.className = `modal-status ${type}`;
+            statusEl.textContent = message;
+            statusEl.style.display = 'block';
+            
+            // Style based on type
+            switch(type) {
+                case 'success':
+                    statusEl.style.background = '#d4edda';
+                    statusEl.style.color = '#155724';
+                    statusEl.style.border = '1px solid #c3e6cb';
+                    break;
+                case 'error':
+                    statusEl.style.background = '#f8d7da';
+                    statusEl.style.color = '#721c24';
+                    statusEl.style.border = '1px solid #f5c6cb';
+                    break;
+                default:
+                    statusEl.style.background = '#d1ecf1';
+                    statusEl.style.color = '#0c5460';
+                    statusEl.style.border = '1px solid #bee5eb';
+            }
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        function clearModalStatus(modalId) {
+            const statusEl = document.querySelector(`#${modalId} .modal-status`);
+            if (statusEl) statusEl.style.display = 'none';
+        }
+
+        // Enhanced button state management
+        function setButtonState(buttonEl, loading, originalText) {
+            if (loading) {
+                buttonEl.disabled = true;
+                buttonEl.style.opacity = '0.6';
+                buttonEl.innerHTML = `
+                    <span style="display: inline-block; width: 16px; height: 16px; border: 2px solid currentColor; border-radius: 50%; border-top-color: transparent; animation: spin 1s linear infinite; margin-right: 8px;"></span>
+                    Processing...
+                `;
+            } else {
+                buttonEl.disabled = false;
+                buttonEl.style.opacity = '1';
+                buttonEl.textContent = originalText;
+            }
+        }
+
+        // Enhanced version of auth modal logic
+        document.addEventListener('DOMContentLoaded', function() {
+            const authModal = document.getElementById('auth-modal');
+            if (!authModal) return;
+            
+            const usernameInput = authModal.querySelector('#username');
+            const passkeyBtn = authModal.querySelector('button.button');
+            const createBtn = authModal.querySelector('a[href="#"]');
+            
+            let currentMode = 'login'; // Track current mode
+            
+            // Enhanced login with passkey
+            if (passkeyBtn) {
+                passkeyBtn.addEventListener('click', async function(e) {
+                    e.preventDefault();
+                    const username = usernameInput.value.trim();
+                    
+                    if (!username) {
+                        showModalStatus('auth-modal', 'Please enter your username', 'error');
+                        return;
+                    }
+                    
+                    const originalText = this.textContent;
+                    setButtonState(this, true, originalText);
+                    clearModalStatus('auth-modal');
+                    
+                    try {
+                        if (currentMode === 'register') {
+                            showModalStatus('auth-modal', 'Creating your account...', 'info');
+                            const success = await registerPasskey(username);
+                            if (success) {
+                                showModalStatus('auth-modal', '✅ Account created! You can now sign in.', 'success');
+                                currentMode = 'login';
+                                passkeyBtn.textContent = '🔑 Sign in with Passkey';
+                                createBtn.textContent = 'Create Account';
+                                usernameInput.focus();
+                            }
+                        } else {
+                            showModalStatus('auth-modal', 'Signing you in...', 'info');
+                            const success = await loginPasskey(username);
+                            if (success) {
+                                showModalStatus('auth-modal', '✅ Welcome back! Redirecting...', 'success');
+                                setTimeout(() => {
+                                    if (authModal.close) authModal.close();
+                                    window.location.reload();
+                                }, 1500);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Auth error:', error);
+                        showModalStatus('auth-modal', `❌ ${error.message}`, 'error');
+                    } finally {
+                        setButtonState(this, false, originalText);
+                    }
+                });
+            }
+            
+            // Enhanced register/create account
+            if (createBtn) {
+                createBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    if (currentMode === 'login') {
+                        // Switch to register mode
+                        currentMode = 'register';
+                        passkeyBtn.textContent = '🆕 Create Account with Passkey';
+                        this.textContent = 'Sign in instead';
+                        clearModalStatus('auth-modal');
+                        showModalStatus('auth-modal', 'Ready to create your account!', 'info');
+                    } else {
+                        // Switch to login mode
+                        currentMode = 'login';
+                        passkeyBtn.textContent = '🔑 Sign in with Passkey';
+                        this.textContent = 'Create Account';
+                        clearModalStatus('auth-modal');
+                    }
+                });
+            }
+            
+            // Enter key support
+            if (usernameInput) {
+                usernameInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        passkeyBtn.click();
+                    }
+                });
+            }
+            
+            // Close modal on escape or backdrop click
+            if (authModal.showModal) {
+                authModal.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        this.close();
+                    }
+                });
+                
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && authModal.open) {
+                        authModal.close();
+                    }
+                });
+            }
+        });
     </script>
 </body>
 </html>

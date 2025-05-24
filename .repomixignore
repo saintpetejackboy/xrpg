@@ -1,0 +1,23 @@
+logs/
+*.log
+.DS_Store
+node_modules/
+thirdparty/vendor/
+.env
+*.sqlite
+*.bak
+*.tmp
+.idea/
+.vscode/
+*.swp
+*.swo
+*.pid
+*.sock
+*.cache
+*.pyc
+__pycache__/
+# Ignore markdown docs not needed for repomix
+NAVIGATION.md
+STRUCTURE.MD
+UPDATES_SYSTEM.md
+updates.log

@@ -12,3 +12,22 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# Ignore logs and other non-essential files
+logs/
+*.log
+.env
+thirdparty/vendor/
+node_modules/
+*.sqlite
+*.bak
+*.tmp
+.idea/
+.vscode/
+*.swp
+*.swo
+*.pid
+*.sock
+*.cache
+*.pyc
+__pycache__/

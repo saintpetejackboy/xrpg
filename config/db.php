@@ -1,6 +1,6 @@
 <?php
 // config/db.php
-require_once __DIR__ . '/../vendor/autoload.php'; // for composer dependencies (phpdotenv)
+require_once __DIR__ . '/../thirdparty/vendor/autoload.php'; // for composer dependencies (phpdotenv)
 
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../');
 $dotenv->load();
