@@ -1,5 +1,5 @@
 <?php
-// /auth/register.php - Enhanced registration with rate limiting and security
+// /auth/register.php - Debug version with extensive logging
 require_once __DIR__ . '/../config/db.php';
 $config = require __DIR__ . '/../config/environment.php';
 require_once __DIR__ . '/../thirdparty/vendor/autoload.php';
@@ -21,15 +21,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
 }
 
+// Debug logging function
+function debugLog($message, $data = null) {
+    $logEntry = "[" . date('Y-m-d H:i:s') . "] REGISTER DEBUG: $message";
+    if ($data !== null) {
+        $logEntry .= " | Data: " . (is_string($data) ? $data : json_encode($data));
+    }
+    error_log($logEntry);
+}
+
 // Initialize rate limiter
 $rateLimiter = new RateLimiter($pdo);
 $clientIP = RateLimiter::getClientIP();
 
 function logError($message, $details = '') {
+    debugLog("ERROR: $message", $details);
     error_log("WebAuthn Registration Error: $message " . ($details ? "Details: $details" : ""));
 }
 
 function sendError($code, $message, $details = '', $retryAfter = null) {
+    debugLog("Sending error response", ['code' => $code, 'message' => $message, 'details' => $details]);
     logError($message, $details);
     http_response_code($code);
     $response = ['error' => $message, 'details' => $details];
@@ -77,6 +88,8 @@ function binaryToBase64url($data) {
 
 // STEP 1: Generate registration options
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    debugLog("Starting registration step 1 (options generation)");
+    
     try {
         // Check rate limits first
         $rateCheck = $rateLimiter->checkRateLimit('register', $clientIP);
@@ -88,6 +101,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             };
             sendError(429, $message, '', $rateCheck['retry_after'] ?? null);
         }
+        
+        debugLog("Rate limit check passed");
         
         // Check account creation limits
         $creationCheck = $rateLimiter->checkAccountCreationLimits($clientIP);
@@ -101,12 +116,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             sendError(429, $message, '', $creationCheck['retry_after'] ?? null);
         }
         
+        debugLog("Creation limit check passed");
+        
         // Check for suspicious activity
         if ($rateLimiter->detectSuspiciousActivity($clientIP)) {
             sendError(429, 'Suspicious activity detected. Please try again later.', '', 3600);
         }
         
         $username = trim($_POST['username'] ?? '');
+        debugLog("Validating username", $username);
+        
         $validation = validateUsername($username);
         if (!$validation['valid']) {
             sendError(400, $validation['error']);
@@ -117,18 +136,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $pdo->prepare('SELECT id FROM users WHERE username = ?');
         $stmt->execute([$username]);
         if ($stmt->fetch()) {
+            debugLog("Username already taken", $username);
             sendError(409, 'Username already taken');
         }
+
+        debugLog("Username available", $username);
 
         // Generate user ID
         $userId = random_bytes(16);
         $userIdBase64 = base64_encode($userId);
+        
+        debugLog("Generated user ID", ['raw_length' => strlen($userId), 'base64' => $userIdBase64]);
 
         // Create RP entity
         $rpEntity = new PublicKeyCredentialRpEntity(
             $config['rp_name'],
             $config['rp_id']
         );
+
+        debugLog("Created RP entity", ['name' => $config['rp_name'], 'id' => $config['rp_id']]);
 
         // Create user entity
         $userEntity = new PublicKeyCredentialUserEntity(
@@ -137,8 +163,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $username
         );
 
+        debugLog("Created user entity", $username);
+
         // Generate challenge
         $challenge = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+        
+        debugLog("Generated challenge", ['challenge' => $challenge, 'length' => strlen($challenge)]);
         
         // Store in session with expiration
         $_SESSION['register_challenge'] = $challenge;
@@ -146,6 +176,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['register_user_id'] = $userIdBase64;
         $_SESSION['register_expires'] = time() + 300; // 5 minute expiration
         $_SESSION['register_ip'] = $clientIP; // Prevent session hijacking
+
+        debugLog("Stored session data", [
+            'username' => $username,
+            'user_id' => $userIdBase64,
+            'expires' => $_SESSION['register_expires'],
+            'ip' => $clientIP
+        ]);
 
         // Create options
         $creationOptions = new PublicKeyCredentialCreationOptions(
@@ -160,30 +197,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $_SESSION['register_creation_options'] = serialize($creationOptions);
 
+        debugLog("Registration options created successfully");
+
         echo json_encode($creationOptions);
         exit;
 
     } catch (Exception $e) {
+        debugLog("Exception in step 1", ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
         sendError(500, 'Failed to generate registration options', $e->getMessage());
     }
 }
 
 // STEP 2: Process registration
 if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+    debugLog("Starting registration step 2 (credential processing)");
+    
     try {
         // Validate session
         if (!isset($_SESSION['register_expires']) || $_SESSION['register_expires'] < time()) {
+            debugLog("Session expired", ['expires' => $_SESSION['register_expires'] ?? 'not set', 'current_time' => time()]);
             sendError(400, 'Registration session expired');
         }
         
         if (!isset($_SESSION['register_ip']) || $_SESSION['register_ip'] !== $clientIP) {
+            debugLog("IP mismatch", ['session_ip' => $_SESSION['register_ip'] ?? 'not set', 'client_ip' => $clientIP]);
             sendError(400, 'Session IP mismatch - possible security issue');
         }
         
         $input = json_decode(file_get_contents('php://input'), true);
         if (!$input) {
+            debugLog("Invalid JSON input");
             sendError(400, 'Invalid JSON input');
         }
+
+        debugLog("Received credential data", ['keys' => array_keys($input)]);
 
         $username = $_SESSION['register_username'] ?? null;
         $userIdBase64 = $_SESSION['register_user_id'] ?? null;
@@ -191,59 +238,111 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
             unserialize($_SESSION['register_creation_options']) : null;
 
         if (!$username || !$userIdBase64 || !$creationOptions) {
+            debugLog("Missing session data", [
+                'username' => $username ? 'present' : 'missing',
+                'user_id' => $userIdBase64 ? 'present' : 'missing',
+                'options' => $creationOptions ? 'present' : 'missing'
+            ]);
             sendError(400, 'Session expired or invalid');
         }
+
+        debugLog("Session validation passed", $username);
 
         // Load credential
         $attestationStatementSupportManager = new \Webauthn\AttestationStatement\AttestationStatementSupportManager();
         $attestationObjectLoader = new \Webauthn\AttestationStatement\AttestationObjectLoader($attestationStatementSupportManager);
         $credentialLoader = new PublicKeyCredentialLoader($attestationObjectLoader);
+        
+        debugLog("Created credential loader");
+        
         $credential = $credentialLoader->loadArray($input);
+        
+        debugLog("Loaded credential", ['id' => $credential->getId(), 'type' => $credential->getType()]);
 
         // Validate
         $validator = new AuthenticatorAttestationResponseValidator();
+        
+        debugLog("Starting credential validation", ['origin' => $config['webauthn_origin']]);
+        
         $publicKeyCredentialSource = $validator->check(
             $credential->getResponse(),
             $creationOptions,
             $config['webauthn_origin']
         );
 
-        // Convert binary credential ID to base64url string
+        debugLog("Credential validation successful");
+
+        // Get credential details
         $credentialIdBinary = $publicKeyCredentialSource->getPublicKeyCredentialId();
         $credentialIdBase64url = binaryToBase64url($credentialIdBinary);
+        $publicKeyBinary = $publicKeyCredentialSource->getCredentialPublicKey();
+        
+        debugLog("Credential details", [
+            'credential_id_length' => strlen($credentialIdBinary),
+            'credential_id_base64url' => $credentialIdBase64url,
+            'public_key_length' => strlen($publicKeyBinary),
+            'public_key_type' => gettype($publicKeyBinary),
+            'public_key_first_10_bytes' => bin2hex(substr($publicKeyBinary, 0, 10))
+        ]);
         
         // Begin transaction for data consistency
         $pdo->beginTransaction();
         
+        debugLog("Started database transaction");
+        
         try {
-            // Insert user
-            $stmt = $pdo->prepare('INSERT INTO users (username, user_id, passkey_id, passkey_public_key) VALUES (?, ?, ?, ?)');
-            $result = $stmt->execute([
-                $username,
-                $userIdBase64,
-                $credentialIdBase64url,
-                $publicKeyCredentialSource->getCredentialPublicKey()
-            ]);
-
+            // Insert user (no passkey columns in users table anymore)
+            $stmt = $pdo->prepare('INSERT INTO users (username, user_id) VALUES (?, ?)');
+            $result = $stmt->execute([$username, $userIdBase64]);
             if (!$result) {
                 throw new Exception('Failed to create user account');
             }
-
             $userId = $pdo->lastInsertId();
             
-			// Create initial user stats (all other columns pick up their DEFAULTs)
-			$stmt = $pdo->prepare('
-				INSERT INTO user_stats (user_id)
-				VALUES (?)
-			');
-			$stmt->execute([$userId]);
+            debugLog("Created user account", ['user_id' => $userId, 'username' => $username]);
 
+            // Insert passkey into user_passkeys table - STORE AS BINARY
+            $stmt = $pdo->prepare('INSERT INTO user_passkeys (user_id, credential_id, public_key, device_name) VALUES (?, ?, ?, ?)');
+            $result = $stmt->execute([
+                $userId,
+                $credentialIdBase64url,
+                $publicKeyBinary, // Store the raw binary data
+                'Primary Device'
+            ]);
+            
+            if (!$result) {
+                throw new Exception('Failed to store passkey');
+            }
+            
+            debugLog("Stored passkey", [
+                'user_id' => $userId,
+                'credential_id' => $credentialIdBase64url,
+                'public_key_stored_length' => strlen($publicKeyBinary)
+            ]);
+
+            // Verify what was actually stored
+            $verifyStmt = $pdo->prepare('SELECT credential_id, public_key, LENGTH(public_key) as key_length FROM user_passkeys WHERE user_id = ?');
+            $verifyStmt->execute([$userId]);
+            $stored = $verifyStmt->fetch(PDO::FETCH_ASSOC);
+            
+            debugLog("Verified stored data", [
+                'stored_credential_id' => $stored['credential_id'],
+                'stored_key_length' => $stored['key_length'],
+                'stored_key_type' => gettype($stored['public_key']),
+                'stored_key_first_10_bytes' => bin2hex(substr($stored['public_key'], 0, 10))
+            ]);
+
+            // Create initial user stats
+            $stmt = $pdo->prepare('INSERT INTO user_stats (user_id) VALUES (?)');
+            $stmt->execute([$userId]);
+            
+            debugLog("Created user stats");
             
             // Create default user preferences
-            $stmt = $pdo->prepare('
-                INSERT INTO user_preferences (user_id) VALUES (?)
-            ');
+            $stmt = $pdo->prepare('INSERT INTO user_preferences (user_id) VALUES (?)');
             $stmt->execute([$userId]);
+            
+            debugLog("Created user preferences");
             
             // Log successful registration
             $stmt = $pdo->prepare('
@@ -259,10 +358,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
                 $_SERVER['HTTP_USER_AGENT'] ?? null
             ]);
             
+            debugLog("Logged registration event");
+            
             $pdo->commit();
+            
+            debugLog("Transaction committed successfully");
             
         } catch (Exception $e) {
             $pdo->rollBack();
+            debugLog("Transaction rolled back", ['error' => $e->getMessage()]);
             throw $e;
         }
 
@@ -270,6 +374,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         unset($_SESSION['register_username'], $_SESSION['register_challenge'], 
               $_SESSION['register_creation_options'], $_SESSION['register_user_id'],
               $_SESSION['register_expires'], $_SESSION['register_ip']);
+
+        debugLog("Registration completed successfully", $username);
 
         echo json_encode([
             'ok' => true, 
@@ -279,6 +385,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
         exit;
 
     } catch (Exception $e) {
+        debugLog("Registration failed", ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
         sendError(500, 'Registration failed', $e->getMessage());
     }
 }

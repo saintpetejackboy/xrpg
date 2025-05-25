@@ -1,10 +1,13 @@
 <?php
-// /players/save-settings.php - Save user preferences to database
+// /players/save-settings.php - API endpoint for saving user preferences
 
-header('Content-Type: application/json');
-
-// Start session and check authentication
 session_start();
+require_once __DIR__ . '/../config/environment.php';
+require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../includes/load-preferences.php';
+
+// Set JSON response header
+header('Content-Type: application/json');
 
 // Check if user is logged in
 if (!isset($_SESSION['user']) || !$_SESSION['user']) {
@@ -13,165 +16,183 @@ if (!isset($_SESSION['user']) || !$_SESSION['user']) {
     exit;
 }
 
-// Only allow POST requests
+// Check if this is a POST request
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method not allowed']);
     exit;
 }
 
-// Handle session user data (might be JSON string or array)
-$user = $_SESSION['user'];
-if (is_string($user)) {
-    $user = json_decode($user, true);
-    if (!$user) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'Invalid user session data']);
-        exit;
-    }
+// Get user info
+$userInfo = getUserInfo($_SESSION['user']);
+$userId = $userInfo['id'];
+
+if (!$userId) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'Invalid user ID']);
+    exit;
 }
 
-$userId = $user['id'];
+// Get JSON input
+$input = file_get_contents('php://input');
+$data = json_decode($input, true);
+
+if (!$data) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'Invalid JSON data']);
+    exit;
+}
+
+// Validate and sanitize settings
+$validSettings = [
+    'theme_mode' => ['light', 'dark'],
+    'font_family' => ['sans', 'mono', 'game', 'display']
+];
+
+$allowedKeys = [
+    'theme_mode', 'accent_color', 'accent_secondary', 
+    'border_radius', 'shadow_intensity', 'ui_opacity', 'font_family'
+];
+
+$settings = [];
+
+foreach ($allowedKeys as $key) {
+    if (!isset($data[$key])) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => "Missing required field: $key"]);
+        exit;
+    }
+    
+    $value = $data[$key];
+    
+    // Validate specific fields
+    switch ($key) {
+        case 'theme_mode':
+            if (!in_array($value, $validSettings['theme_mode'])) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'message' => 'Invalid theme mode']);
+                exit;
+            }
+            break;
+            
+        case 'font_family':
+            if (!in_array($value, $validSettings['font_family'])) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'message' => 'Invalid font family']);
+                exit;
+            }
+            break;
+            
+        case 'accent_color':
+        case 'accent_secondary':
+            if (!preg_match('/^#[0-9a-fA-F]{6}$/', $value)) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'message' => "Invalid color format for $key"]);
+                exit;
+            }
+            break;
+            
+        case 'border_radius':
+            $value = intval($value);
+            if ($value < 9 || $value > 40) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'message' => 'Border radius must be between 9 and 40']);
+                exit;
+            }
+            break;
+            
+        case 'shadow_intensity':
+            $value = floatval($value);
+            if ($value < 0.05 || $value > 0.5) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'message' => 'Shadow intensity must be between 0.05 and 0.5']);
+                exit;
+            }
+            break;
+            
+        case 'ui_opacity':
+            $value = floatval($value);
+            if ($value < 0.8 || $value > 1.0) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'message' => 'UI opacity must be between 0.8 and 1.0']);
+                exit;
+            }
+            break;
+    }
+    
+    $settings[$key] = $value;
+}
 
 try {
-    // Get JSON input
-    $input = file_get_contents('php://input');
-    $data = json_decode($input, true);
-    
-    if (!$data) {
-        throw new Exception('Invalid JSON data');
-    }
-    
-    // Validate required fields
-    $requiredFields = ['theme_mode', 'accent_color', 'accent_secondary', 'font_family', 'border_radius', 'shadow_intensity', 'ui_opacity'];
-    foreach ($requiredFields as $field) {
-        if (!isset($data[$field])) {
-            throw new Exception("Missing required field: $field");
-        }
-    }
-    
-    // Validate theme_mode
-    if (!in_array($data['theme_mode'], ['dark', 'light'])) {
-        throw new Exception('Invalid theme_mode. Must be "dark" or "light"');
-    }
-    
-    // Validate font_family
-    if (!in_array($data['font_family'], ['sans', 'mono', 'game', 'display'])) {
-        throw new Exception('Invalid font_family. Must be one of: sans, mono, game, display');
-    }
-    
-    // Validate color formats (hex colors)
-    if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $data['accent_color'])) {
-        throw new Exception('Invalid accent_color format. Must be a valid hex color');
-    }
-    
-    if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $data['accent_secondary'])) {
-        throw new Exception('Invalid accent_secondary format. Must be a valid hex color');
-    }
-    
-    // Validate numeric ranges
-    $borderRadius = intval($data['border_radius']);
-    if ($borderRadius < 9 || $borderRadius > 40) {
-        throw new Exception('border_radius must be between 9 and 40');
-    }
-    
-    $shadowIntensity = floatval($data['shadow_intensity']);
-    if ($shadowIntensity < 0.05 || $shadowIntensity > 0.5) {
-        throw new Exception('shadow_intensity must be between 0.05 and 0.5');
-    }
-    
-    $uiOpacity = floatval($data['ui_opacity']);
-    if ($uiOpacity < 0.8 || $uiOpacity > 1.0) {
-        throw new Exception('ui_opacity must be between 0.8 and 1.0');
-    }
-    
-    // Connect to database
-    require_once __DIR__ . '/../config/db.php';
-    
     // Check if user preferences exist
     $stmt = $pdo->prepare('SELECT id FROM user_preferences WHERE user_id = ?');
     $stmt->execute([$userId]);
-    $exists = $stmt->fetch();
+    $existingPrefs = $stmt->fetch();
     
-    if ($exists) {
+    if ($existingPrefs) {
         // Update existing preferences
         $stmt = $pdo->prepare('
             UPDATE user_preferences 
-            SET theme_mode = ?, accent_color = ?, accent_secondary = ?, font_family = ?, 
-                border_radius = ?, shadow_intensity = ?, ui_opacity = ?, updated_at = CURRENT_TIMESTAMP
+            SET theme_mode = ?, accent_color = ?, accent_secondary = ?, 
+                border_radius = ?, shadow_intensity = ?, ui_opacity = ?, 
+                font_family = ?, updated_at = NOW()
             WHERE user_id = ?
         ');
-        $result = $stmt->execute([
-            $data['theme_mode'],
-            $data['accent_color'],
-            $data['accent_secondary'],
-            $data['font_family'],
-            $borderRadius,
-            $shadowIntensity,
-            $uiOpacity,
+        $stmt->execute([
+            $settings['theme_mode'],
+            $settings['accent_color'],
+            $settings['accent_secondary'],
+            $settings['border_radius'],
+            $settings['shadow_intensity'],
+            $settings['ui_opacity'],
+            $settings['font_family'],
             $userId
         ]);
     } else {
-        // Insert new preferences
+        // Create new preferences
         $stmt = $pdo->prepare('
-            INSERT INTO user_preferences (user_id, theme_mode, accent_color, accent_secondary, font_family, border_radius, shadow_intensity, ui_opacity)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ');
-        $result = $stmt->execute([
-            $userId,
-            $data['theme_mode'],
-            $data['accent_color'],
-            $data['accent_secondary'],
-            $data['font_family'],
-            $borderRadius,
-            $shadowIntensity,
-            $uiOpacity
-        ]);
-    }
-    
-    if (!$result) {
-        throw new Exception('Failed to save preferences to database');
-    }
-    
-    // Log this activity
-    try {
-        $stmt = $pdo->prepare('
-            INSERT INTO auth_log (user_id, username, event_type, description, ip_addr, user_agent)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO user_preferences 
+            (user_id, theme_mode, accent_color, accent_secondary, border_radius, shadow_intensity, ui_opacity, font_family, created_at, updated_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
         ');
         $stmt->execute([
             $userId,
-            isset($user['username']) ? $user['username'] : 'unknown',
-            'other',
-            'Updated theme preferences',
-            $_SERVER['REMOTE_ADDR'] ?? null,
-            $_SERVER['HTTP_USER_AGENT'] ?? null
+            $settings['theme_mode'],
+            $settings['accent_color'],
+            $settings['accent_secondary'],
+            $settings['border_radius'],
+            $settings['shadow_intensity'],
+            $settings['ui_opacity'],
+            $settings['font_family']
+        ]);
+    }
+    
+    // Log the settings change
+    try {
+        $stmt = $pdo->prepare('
+            INSERT INTO auth_log (user_id, event_type, description, ip_address, user_agent, created_at) 
+            VALUES (?, ?, ?, ?, ?, NOW())
+        ');
+        $stmt->execute([
+            $userId,
+            'settings_update',
+            'User updated theme preferences',
+            $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+            $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
         ]);
     } catch (Exception $e) {
-        // Don't fail if logging fails
+        // Log error but don't fail the settings save
         error_log("Failed to log settings update: " . $e->getMessage());
     }
     
-    // Return success response
     echo json_encode([
         'success' => true, 
         'message' => 'Settings saved successfully',
-        'data' => [
-            'theme_mode' => $data['theme_mode'],
-            'accent_color' => $data['accent_color'],
-            'accent_secondary' => $data['accent_secondary'],
-            'font_family' => $data['font_family'],
-            'border_radius' => $borderRadius,
-            'shadow_intensity' => $shadowIntensity,
-            'ui_opacity' => $uiOpacity
-        ]
+        'settings' => $settings
     ]);
     
 } catch (Exception $e) {
-    error_log("Settings save error: " . $e->getMessage());
-    http_response_code(400);
-    echo json_encode([
-        'success' => false, 
-        'message' => $e->getMessage()
-    ]);
+    error_log("Failed to save user preferences: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Database error occurred']);
 }

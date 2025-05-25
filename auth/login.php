@@ -1,5 +1,5 @@
 <?php
-// /auth/login.php - Enhanced login with rate limiting and security
+// /auth/login.php - Debug version with extensive logging
 require_once __DIR__ . '/../config/db.php';
 $config = require __DIR__ . '/../config/environment.php';
 require_once __DIR__ . '/../thirdparty/vendor/autoload.php';
@@ -9,8 +9,10 @@ use Webauthn\PublicKeyCredentialRequestOptions;
 use Webauthn\PublicKeyCredentialDescriptor;
 use Webauthn\PublicKeyCredentialLoader;
 use Webauthn\AuthenticatorAssertionResponseValidator;
-use Webauthn\PublicKeyCredentialSource;
 use Webauthn\TrustPath\EmptyTrustPath;
+use Webauthn\AttestationStatement\AttestationStatementSupportManager;
+use Webauthn\AttestationStatement\AttestationObjectLoader;
+use Symfony\Component\Uid\Uuid; // Add this import
 
 session_start();
 header('Content-Type: application/json');
@@ -18,108 +20,164 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, PUT, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    exit(0);
-}
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit(0);
 
-// Initialize rate limiter
 $rateLimiter = new RateLimiter($pdo);
-$clientIP = RateLimiter::getClientIP();
+$clientIP    = RateLimiter::getClientIP();
 
-function logError($message, $details = '') {
-    error_log("WebAuthn Login Error: $message " . ($details ? "Details: $details" : ""));
-}
-
-function sendError($code, $message, $details = '', $retryAfter = null) {
-    logError($message, $details);
-    http_response_code($code);
-    $response = ['error' => $message, 'details' => $details];
-    if ($retryAfter) {
-        $response['retry_after'] = $retryAfter;
-        header("Retry-After: $retryAfter");
+// Debug logging function
+function debugLog($message, $data = null) {
+    $logEntry = "[" . date('Y-m-d H:i:s') . "] LOGIN DEBUG: $message";
+    if ($data !== null) {
+        $logEntry .= " | Data: " . (is_string($data) ? $data : json_encode($data));
     }
-    echo json_encode($response);
-    exit;
+    error_log($logEntry);
 }
 
-// Convert base64url string to binary data
-function base64urlToBinary($data) {
-    $data = str_replace(['-', '_'], ['+', '/'], $data);
-    while (strlen($data) % 4) {
-        $data .= '=';
-    }
-    return base64_decode($data);
+function base64urlToBinary(string $data): string {
+    $base64 = strtr($data, '-_', '+/');
+    return base64_decode(str_pad($base64, strlen($base64) % 4, '=', STR_PAD_RIGHT));
 }
 
-// Convert binary data to base64url string
-function binaryToBase64url($data) {
+function binaryToBase64url(string $data): string {
     return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
 }
 
-// Enhanced credential repository with security logging
-class SecureCredentialRepository implements \Webauthn\PublicKeyCredentialSourceRepository {
-    private $user;
-    private $pdo;
-    private $ip;
-    
-    public function __construct($user, $pdo, $ip) {
+class DebugPasskeyRepository implements \Webauthn\PublicKeyCredentialSourceRepository {
+    private array $user;
+    private \PDO  $pdo;
+    private string $ip;
+
+    public function __construct(array $user, \PDO $pdo, string $ip) {
         $this->user = $user;
-        $this->pdo = $pdo;
-        $this->ip = $ip;
+        $this->pdo  = $pdo;
+        $this->ip   = $ip;
+        debugLog("Repository created for user", ['user_id' => $user['id'], 'username' => $user['username']]);
     }
-    
+
     public function findOneByCredentialId(string $publicKeyCredentialId): ?\Webauthn\PublicKeyCredentialSource {
-        $incomingCredentialIdBase64url = binaryToBase64url($publicKeyCredentialId);
+        debugLog("Looking for credential", ['raw_id_length' => strlen($publicKeyCredentialId)]);
         
-        if ($incomingCredentialIdBase64url === $this->user['passkey_id']) {
+        // Convert binary credential ID to base64url for database lookup
+        $credentialIdBase64url = binaryToBase64url($publicKeyCredentialId);
+        
+        debugLog("Converted credential ID", [
+            'base64url' => $credentialIdBase64url,
+            'original_bytes' => bin2hex($publicKeyCredentialId)
+        ]);
+
+        // Look up passkey in user_passkeys table
+        $stmt = $this->pdo->prepare('
+            SELECT credential_id, public_key, LENGTH(public_key) as key_length, device_name, last_used 
+            FROM user_passkeys 
+            WHERE user_id = ? AND credential_id = ?
+        ');
+        $stmt->execute([$this->user['id'], $credentialIdBase64url]);
+        $passkey = $stmt->fetch(\PDO::FETCH_ASSOC);
+        
+        if ($passkey) {
+            debugLog("Passkey found in database", [
+                'credential_id' => $passkey['credential_id'],
+                'key_length' => $passkey['key_length'],
+                'device_name' => $passkey['device_name'],
+                'last_used' => $passkey['last_used'],
+                'key_type' => gettype($passkey['public_key']),
+                'key_first_10_bytes' => bin2hex(substr($passkey['public_key'], 0, 10))
+            ]);
+            
+            $this->log('login', 'Passkey found in user_passkeys table');
+            
+            // Update last_used timestamp
             try {
-                $aaguid = null;
-                if (class_exists('Symfony\Component\Uid\Uuid')) {
-                    try {
-                        $aaguid = \Symfony\Component\Uid\Uuid::v4();
-                    } catch (Exception $e) {
-                        $aaguid = null;
-                    }
-                }
-                
-                // Log successful credential lookup
-                $this->logAuthEvent('credential_found', 'Passkey credential found for login');
-                
-                return new \Webauthn\PublicKeyCredentialSource(
-                    $publicKeyCredentialId,
-                    'public-key',
-                    [],
-                    'none',
-                    new EmptyTrustPath(),
-                    $aaguid,
-                    $this->user['passkey_public_key'],
-                    base64_decode($this->user['user_id']),
-                    0
-                );
-                
+                $updateStmt = $this->pdo->prepare('
+                    UPDATE user_passkeys 
+                    SET last_used = NOW() 
+                    WHERE user_id = ? AND credential_id = ?
+                ');
+                $updateStmt->execute([$this->user['id'], $credentialIdBase64url]);
+                debugLog("Updated last_used timestamp");
             } catch (Exception $e) {
-                error_log("Failed to create PublicKeyCredentialSource: " . $e->getMessage());
-                $this->logAuthEvent('credential_error', 'Failed to create credential source: ' . $e->getMessage());
-                return null;
+                debugLog("Failed to update last_used", $e->getMessage());
             }
+            
+            return $this->buildCredentialSource($publicKeyCredentialId, $passkey['public_key']);
         }
+
+        // If not found, let's see what passkeys exist for this user
+        $debugStmt = $this->pdo->prepare('
+            SELECT credential_id, LENGTH(public_key) as key_length, device_name 
+            FROM user_passkeys 
+            WHERE user_id = ?
+        ');
+        $debugStmt->execute([$this->user['id']]);
+        $allPasskeys = $debugStmt->fetchAll(\PDO::FETCH_ASSOC);
         
-        $this->logAuthEvent('credential_not_found', 'Passkey credential not found');
+        debugLog("Available passkeys for user", [
+            'user_id' => $this->user['id'],
+            'passkey_count' => count($allPasskeys),
+            'passkeys' => $allPasskeys
+        ]);
+
+        $this->log('fail', 'Credential not found for user');
         return null;
     }
-    
-    public function findAllForUserEntity(\Webauthn\PublicKeyCredentialUserEntity $publicKeyCredentialUserEntity): array {
+
+    public function findAllForUserEntity(\Webauthn\PublicKeyCredentialUserEntity $userEntity): array {
+        debugLog("findAllForUserEntity called (not used in authentication)");
         return [];
     }
-    
-    public function saveCredentialSource(\Webauthn\PublicKeyCredentialSource $publicKeyCredentialSource): void {
-        // Not needed for login
+
+    public function saveCredentialSource(\Webauthn\PublicKeyCredentialSource $credentialSource): void {
+        debugLog("saveCredentialSource called (not used in authentication)");
     }
-    
-    private function logAuthEvent($eventType, $description) {
+
+    private function buildCredentialSource(string $credentialId, string $publicKey): \Webauthn\PublicKeyCredentialSource {
+        debugLog("Building credential source", [
+            'credential_id_length' => strlen($credentialId),
+            'public_key_length' => strlen($publicKey),
+            'public_key_type' => gettype($publicKey),
+            'user_handle_b64' => $this->user['user_id']
+        ]);
+        
+        $userHandle = base64_decode($this->user['user_id']);
+        
+        debugLog("User handle decoded", [
+            'original' => $this->user['user_id'],
+            'decoded_length' => strlen($userHandle),
+            'decoded_hex' => bin2hex($userHandle)
+        ]);
+        
+        // Create a nil UUID for the AAGUID since we don't store it
+        $nilUuid = Uuid::fromString('00000000-0000-0000-0000-000000000000');
+        
+        debugLog("Created nil UUID for AAGUID", [
+            'uuid_string' => $nilUuid->toRfc4122()
+        ]);
+        
+        $source = new \Webauthn\PublicKeyCredentialSource(
+            $credentialId,
+            'public-key',
+            [],
+            'none',
+            new EmptyTrustPath(),
+            $nilUuid, // Fixed: Use nil UUID instead of null
+            $publicKey,
+            $userHandle,
+            0
+        );
+        
+        debugLog("Credential source built successfully");
+        return $source;
+    }
+
+    private function log(string $type, string $description): void {
+        // Valid event types from ENUM definition
+        $validTypes = ['login', 'logout', 'fail', 'passkey_register', 'password_reset', 'permission_change', 'other'];
+        $eventType = in_array($type, $validTypes) ? $type : 'other';
+        
         try {
             $stmt = $this->pdo->prepare('
-                INSERT INTO auth_log (user_id, username, event_type, description, ip_addr, user_agent) 
+                INSERT INTO auth_log (user_id, username, event_type, description, ip_addr, user_agent)
                 VALUES (?, ?, ?, ?, ?, ?)
             ');
             $stmt->execute([
@@ -130,188 +188,244 @@ class SecureCredentialRepository implements \Webauthn\PublicKeyCredentialSourceR
                 $this->ip,
                 $_SERVER['HTTP_USER_AGENT'] ?? null
             ]);
-        } catch (Exception $e) {
-            error_log("Failed to log auth event: " . $e->getMessage());
+            debugLog("Logged authentication event", ['type' => $eventType, 'description' => $description]);
+        } catch (\Throwable $e) {
+            debugLog("Failed to log authentication event", $e->getMessage());
         }
     }
 }
 
-// STEP 1: Generate login options
+function sendError(int $code, string $message, string $details = null, int $retryAfter = null, bool $allowFallback = false): void {
+    debugLog("Sending error response", [
+        'code' => $code,
+        'message' => $message,
+        'details' => $details,
+        'allow_fallback' => $allowFallback
+    ]);
+    
+    http_response_code($code);
+    $response = ['error' => $message];
+    
+    if ($details) $response['details'] = $details;
+    if ($retryAfter) {
+        header("Retry-After: $retryAfter");
+        $response['retry_after'] = $retryAfter;
+    }
+    if ($allowFallback) $response['allow_fallback'] = true;
+    
+    echo json_encode($response);
+    exit;
+}
+
+// STEP 1: Generate authentication options
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    try {
-        $username = trim($_POST['username'] ?? '');
-        
-        // Check rate limits first (before revealing if user exists)
-        $rateCheck = $rateLimiter->checkRateLimit('login', $clientIP, $username);
-        if (!$rateCheck['allowed']) {
-            $message = match($rateCheck['reason']) {
-                'temporarily_blocked' => 'Too many login attempts. Please try again later.',
-                'too_many_attempts' => 'Login temporarily blocked due to multiple failures.',
-                default => 'Login rate limit exceeded.'
-            };
-            sendError(429, $message, '', $rateCheck['retry_after'] ?? null);
-        }
-        
-        // Check for suspicious activity
-        if ($rateLimiter->detectSuspiciousActivity($clientIP, $username)) {
-            sendError(429, 'Suspicious activity detected. Please try again later.', '', 1800);
-        }
-        
-        if (!$username) {
-            sendError(400, 'Missing username');
-        }
+    debugLog("Starting login step 1 (options generation)");
+    
+    $username = trim($_POST['username'] ?? '');
+    if (!$username) {
+        debugLog("Missing username");
+        sendError(400, 'Missing username');
+    }
 
-        // Validate username format (but don't reveal if it exists yet)
-        if (strlen($username) < 3 || strlen($username) > 50 || !preg_match('/^[a-zA-Z0-9_-]+$/', $username)) {
-            sendError(400, 'Invalid username format');
-        }
+    debugLog("Looking up user", $username);
 
-        $stmt = $pdo->prepare('SELECT * FROM users WHERE username = ?');
-        $stmt->execute([$username]);
-        $user = $stmt->fetch();
-        
-        if (!$user) {
-            // Log failed attempt but don't reveal user doesn't exist
-            try {
-                $stmt = $pdo->prepare('
-                    INSERT INTO auth_log (username, event_type, description, ip_addr, user_agent) 
-                    VALUES (?, ?, ?, ?, ?)
-                ');
-                $stmt->execute([
-                    $username,
-                    'login_failed',
-                    'Login attempt for non-existent user',
-                    $clientIP,
-                    $_SERVER['HTTP_USER_AGENT'] ?? null
-                ]);
-            } catch (Exception $e) {
-                error_log("Failed to log failed login: " . $e->getMessage());
-            }
-            
-            sendError(404, 'User not found');
-        }
+    // Find user
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE username = ?');
+    $stmt->execute([$username]);
+    $user = $stmt->fetch(\PDO::FETCH_ASSOC);
+    
+    if (!$user) {
+        debugLog("User not found", $username);
+        sendError(404, 'User not found');
+    }
 
-        // Create credential descriptor
-        $credentialIdBinary = base64urlToBinary($user['passkey_id']);
-        $allowCredentials = [
-            new PublicKeyCredentialDescriptor(
+    debugLog("User found", [
+        'user_id' => $user['id'],
+        'username' => $user['username'],
+        'user_id_b64' => $user['user_id'],
+        'has_fallback_password' => !empty($user['fallback_password_hash'])
+    ]);
+
+    // Get all passkeys for this user from user_passkeys table
+    $stmt = $pdo->prepare('
+        SELECT credential_id, LENGTH(public_key) as key_length, device_name, created_at, last_used 
+        FROM user_passkeys 
+        WHERE user_id = ?
+    ');
+    $stmt->execute([$user['id']]);
+    $userPasskeys = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+    debugLog("Found passkeys for user", [
+        'passkey_count' => count($userPasskeys),
+        'passkeys' => $userPasskeys
+    ]);
+
+    if (empty($userPasskeys)) {
+        debugLog("No passkeys found for user");
+        sendError(404, 'No passkeys found for this user');
+    }
+
+    // Build allowCredentials array
+    $allowCredentials = [];
+    foreach ($userPasskeys as $passkey) {
+        try {
+            $credentialIdBinary = base64urlToBinary($passkey['credential_id']);
+            $allowCredentials[] = new PublicKeyCredentialDescriptor(
                 'public-key',
                 $credentialIdBinary
-            )
-        ];
-
-        // Generate challenge (binary first, then base64url for transmission)
-        $challengeBinary = random_bytes(32);
-        $challengeBase64url = rtrim(strtr(base64_encode($challengeBinary), '+/', '-_'), '=');
-        
-        // Store in session with enhanced security
-        $_SESSION['login_challenge'] = $challengeBase64url;
-        $_SESSION['login_user_id'] = $user['id'];
-        $_SESSION['login_username'] = $user['username'];
-        $_SESSION['login_expires'] = time() + 300; // 5 minute expiration
-        $_SESSION['login_ip'] = $clientIP; // Prevent session hijacking
-        $_SESSION['login_user_agent_hash'] = hash('sha256', $_SERVER['HTTP_USER_AGENT'] ?? '');
-
-        // Create request options with binary challenge
-        $requestOptions = new PublicKeyCredentialRequestOptions($challengeBinary);
-        
-        $requestOptions = $requestOptions
-            ->allowCredentials(...$allowCredentials)
-            ->setTimeout(60000)
-            ->setRpId($config['rp_id'])
-            ->setUserVerification('discouraged');
-
-        $_SESSION['login_request_options'] = serialize($requestOptions);
-        
-        // Log login attempt start
-        try {
-            $stmt = $pdo->prepare('
-                INSERT INTO auth_log (user_id, username, event_type, description, ip_addr, user_agent) 
-                VALUES (?, ?, ?, ?, ?, ?)
-            ');
-            $stmt->execute([
-                $user['id'],
-                $user['username'],
-                'login_start',
-                'Login challenge generated',
-                $clientIP,
-                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
+            
+            debugLog("Added credential to allowCredentials", [
+                'credential_id_b64url' => $passkey['credential_id'],
+                'binary_length' => strlen($credentialIdBinary),
+                'device_name' => $passkey['device_name']
             ]);
         } catch (Exception $e) {
-            error_log("Failed to log login start: " . $e->getMessage());
+            debugLog("Failed to process credential", [
+                'credential_id' => $passkey['credential_id'],
+                'error' => $e->getMessage()
+            ]);
         }
-        
-        echo json_encode([
-            'challenge' => $challengeBase64url,
-            'allowCredentials' => array_map(function($cred) {
-                return [
-                    'type' => $cred->getType(),
-                    'id' => binaryToBase64url($cred->getId())
-                ];
-            }, $allowCredentials),
-            'timeout' => 60000,
-            'rpId' => $config['rp_id'],
-            'userVerification' => 'discouraged'
-        ]);
-        exit;
-
-    } catch (Exception $e) {
-        sendError(500, 'Failed to generate login options', $e->getMessage());
     }
+
+    if (empty($allowCredentials)) {
+        debugLog("No valid credentials could be processed");
+        sendError(500, 'No valid credentials found');
+    }
+
+    // Generate challenge
+    $challengeRaw = random_bytes(32);
+    $challengeBase64url = binaryToBase64url($challengeRaw);
+
+    debugLog("Generated challenge", [
+        'challenge_b64url' => $challengeBase64url,
+        'challenge_raw_length' => strlen($challengeRaw),
+        'challenge_hex' => bin2hex($challengeRaw)
+    ]);
+
+    // Store authentication data in session
+    $_SESSION['login_challenge'] = $challengeBase64url;
+    $_SESSION['login_ip'] = $clientIP;
+    $_SESSION['login_user_agent_hash'] = hash('sha256', $_SERVER['HTTP_USER_AGENT'] ?? '');
+    $_SESSION['login_user'] = $user;
+    $_SESSION['login_expires'] = time() + 300; // 5 minute expiration
+
+    // Create request options
+    $requestOptions = (new PublicKeyCredentialRequestOptions(
+        $challengeRaw,
+        $config['rp_id'],
+        $allowCredentials
+    ))
+    ->setTimeout(60000)
+    ->setUserVerification('discouraged');
+
+    $_SESSION['login_options'] = serialize($requestOptions);
+
+    debugLog("Stored session data", [
+        'expires' => $_SESSION['login_expires'],
+        'ip' => $clientIP,
+        'rp_id' => $config['rp_id']
+    ]);
+
+    // Return options to client
+    $responseData = [
+        'challenge' => $challengeBase64url,
+        'allowCredentials' => array_map(function($cred) {
+            return [
+                'type' => $cred->getType(),
+                'id' => binaryToBase64url($cred->getId())
+            ];
+        }, $allowCredentials),
+        'timeout' => 60000,
+        'rpId' => $config['rp_id'],
+        'userVerification' => 'discouraged'
+    ];
+
+    debugLog("Sending response to client", $responseData);
+
+    echo json_encode($responseData);
+    exit;
 }
 
-// STEP 2: Validate login
+// STEP 2: Verify authentication
 if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+    debugLog("Starting login step 2 (credential verification)");
+    
+    $body = json_decode(file_get_contents('php://input'), true) ?? [];
+    
+    debugLog("Received credential assertion", ['keys' => array_keys($body)]);
+    
+    // Validate session
+    if (!isset($_SESSION['login_options'], $_SESSION['login_user'])) {
+        debugLog("Missing session data", [
+            'has_options' => isset($_SESSION['login_options']),
+            'has_user' => isset($_SESSION['login_user'])
+        ]);
+        sendError(400, 'No login session in progress');
+    }
+    
+    if (!isset($_SESSION['login_expires']) || $_SESSION['login_expires'] < time()) {
+        debugLog("Session expired", [
+            'expires' => $_SESSION['login_expires'] ?? 'not set',
+            'current_time' => time()
+        ]);
+        sendError(400, 'Login session expired');
+    }
+    
+    if ($_SESSION['login_ip'] !== $clientIP) {
+        debugLog("IP mismatch", [
+            'session_ip' => $_SESSION['login_ip'],
+            'client_ip' => $clientIP
+        ]);
+        sendError(400, 'IP address mismatch');
+    }
+    
+    if (hash('sha256', $_SERVER['HTTP_USER_AGENT'] ?? '') !== $_SESSION['login_user_agent_hash']) {
+        debugLog("User agent mismatch");
+        sendError(400, 'User agent mismatch');
+    }
+
+    debugLog("Session validation passed");
+
+    $user = $_SESSION['login_user'];
+    $requestOptions = unserialize($_SESSION['login_options']);
+
+    debugLog("Retrieved session data", [
+        'user' => $user['username'],
+        'user_id' => $user['id'],
+        'options_type' => get_class($requestOptions)
+    ]);
+
     try {
-        // Enhanced session validation
-        if (!isset($_SESSION['login_expires']) || $_SESSION['login_expires'] < time()) {
-            sendError(400, 'Login session expired');
-        }
-        
-        if (!isset($_SESSION['login_ip']) || $_SESSION['login_ip'] !== $clientIP) {
-            sendError(400, 'Session IP mismatch - possible security issue');
-        }
-        
-        $currentUserAgentHash = hash('sha256', $_SERVER['HTTP_USER_AGENT'] ?? '');
-        if (!isset($_SESSION['login_user_agent_hash']) || 
-            $_SESSION['login_user_agent_hash'] !== $currentUserAgentHash) {
-            sendError(400, 'Session user agent mismatch - possible security issue');
-        }
-        
-        $input = json_decode(file_get_contents('php://input'), true);
-        if (!$input) {
-            sendError(400, 'Invalid JSON input');
-        }
-
-        $challenge = $_SESSION['login_challenge'] ?? null;
-        $userId = $_SESSION['login_user_id'] ?? null;
-        $username = $_SESSION['login_username'] ?? null;
-        $requestOptions = isset($_SESSION['login_request_options']) ? 
-            unserialize($_SESSION['login_request_options']) : null;
-
-        if (!$challenge || !$userId || !$requestOptions || !$username) {
-            sendError(400, 'Session expired or invalid');
-        }
-
-        $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
-        $stmt->execute([$userId]);
-        $user = $stmt->fetch();
-        if (!$user) {
-            sendError(404, 'User not found');
-        }
-
-        // Load credential
-        $attestationStatementSupportManager = new \Webauthn\AttestationStatement\AttestationStatementSupportManager();
-        $attestationObjectLoader = new \Webauthn\AttestationStatement\AttestationObjectLoader($attestationStatementSupportManager);
+        // Load credential from client response
+        $attestationStatementSupportManager = new AttestationStatementSupportManager();
+        $attestationObjectLoader = new AttestationObjectLoader($attestationStatementSupportManager);
         $credentialLoader = new PublicKeyCredentialLoader($attestationObjectLoader);
-        $credential = $credentialLoader->loadArray($input);
-
-        // Create repository and validator with enhanced security
-        $credentialRepository = new SecureCredentialRepository($user, $pdo, $clientIP);
-        $validator = new AuthenticatorAssertionResponseValidator($credentialRepository);
         
-        // Validate assertion
-        $publicKeyCredentialSource = $validator->check(
+        debugLog("Created credential loader");
+        
+        $credential = $credentialLoader->loadArray($body);
+        
+        debugLog("Loaded credential from client", [
+            'id' => $credential->getId(),
+            'raw_id_length' => strlen($credential->getRawId()),
+            'type' => $credential->getType(),
+            'raw_id_hex' => bin2hex($credential->getRawId())
+        ]);
+        
+        // Create repository and validator
+        $repository = new DebugPasskeyRepository($user, $pdo, $clientIP);
+        $validator = new AuthenticatorAssertionResponseValidator($repository);
+
+        debugLog("Created repository and validator");
+
+        // Verify the assertion
+        debugLog("Starting assertion verification", [
+            'origin' => $config['webauthn_origin'],
+            'user_handle' => $user['user_id']
+        ]);
+        
+        $validator->check(
             $credential->getRawId(),
             $credential->getResponse(),
             $requestOptions,
@@ -319,80 +433,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
             base64_decode($user['user_id'])
         );
 
-        // Login successful - update last login time
-        try {
-            $stmt = $pdo->prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?');
-            $stmt->execute([$user['id']]);
-        } catch (Exception $e) {
-            error_log("Failed to update last login: " . $e->getMessage());
-        }
+        debugLog("Assertion verification successful!");
 
-        // Set secure session
-        session_regenerate_id(true); // Prevent session fixation
+        // Authentication successful - create session
+        session_regenerate_id(true);
         $_SESSION['user'] = [
-            'id' => $user['id'], 
-            'username' => $user['username'], 
+            'id' => $user['id'],
+            'username' => $user['username'],
             'type' => 'player',
-            'login_time' => time(),
-            'login_ip' => $clientIP
+            'login_ip' => $clientIP,
+            'login_time' => time()
         ];
 
+        debugLog("Created user session", ['username' => $user['username'], 'user_id' => $user['id']]);
+
         // Log successful login
-        try {
-            $stmt = $pdo->prepare('
-                INSERT INTO auth_log (user_id, username, event_type, description, ip_addr, user_agent) 
-                VALUES (?, ?, ?, ?, ?, ?)
-            ');
-            $stmt->execute([
-                $user['id'],
-                $user['username'],
-                'login',
-                'Successful passkey authentication',
-                $clientIP,
-                $_SERVER['HTTP_USER_AGENT'] ?? null
-            ]);
-        } catch (Exception $e) {
-            error_log("Failed to log successful login: " . $e->getMessage());
-        }
+        $stmt = $pdo->prepare('
+            INSERT INTO auth_log (user_id, username, event_type, description, ip_addr, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ');
+        $stmt->execute([
+            $user['id'], 
+            $user['username'],
+            'login', 
+            'Successful WebAuthn login',
+            $clientIP, 
+            $_SERVER['HTTP_USER_AGENT'] ?? null
+        ]);
+
+        debugLog("Logged successful authentication");
 
         // Clear login session data
-        unset($_SESSION['login_challenge'], $_SESSION['login_user_id'], 
-              $_SESSION['login_request_options'], $_SESSION['login_username'],
-              $_SESSION['login_expires'], $_SESSION['login_ip'], 
-              $_SESSION['login_user_agent_hash']);
+        foreach (['login_challenge', 'login_options', 'login_user', 'login_ip', 'login_user_agent_hash', 'login_expires'] as $key) {
+            unset($_SESSION[$key]);
+        }
+
+        debugLog("Cleared login session data");
 
         echo json_encode([
-            'ok' => true, 
-            'message' => 'Login successful',
+            'ok' => true,
             'username' => $user['username']
         ]);
         exit;
 
-    } catch (Exception $e) {
-        // Log authentication failure
-        $username = $_SESSION['login_username'] ?? 'unknown';
-        $userId = $_SESSION['login_user_id'] ?? null;
+    } catch (\Throwable $e) {
+        debugLog("Authentication failed with exception", [
+            'message' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        // Check if user has fallback password set
+        $allowFallback = !empty($user['fallback_password_hash']);
         
-        try {
-            $stmt = $pdo->prepare('
-                INSERT INTO auth_log (user_id, username, event_type, description, ip_addr, user_agent, rate_limited) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ');
-            $stmt->execute([
-                $userId,
-                $username,
-                'login_failed',
-                'Authentication failed: ' . $e->getMessage(),
-                $clientIP,
-                $_SERVER['HTTP_USER_AGENT'] ?? null,
-                false
-            ]);
-        } catch (Exception $logError) {
-            error_log("Failed to log authentication failure: " . $logError->getMessage());
-        }
+        debugLog("Checking fallback options", ['allow_fallback' => $allowFallback]);
         
-        sendError(401, 'Authentication failed', $e->getMessage());
+        // Log failed login attempt
+        $stmt = $pdo->prepare('
+            INSERT INTO auth_log (user_id, username, event_type, description, ip_addr, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ');
+        $stmt->execute([
+            $user['id'],
+            $user['username'],
+            'fail',
+            'WebAuthn authentication failed: ' . $e->getMessage(),
+            $clientIP,
+            $_SERVER['HTTP_USER_AGENT'] ?? null
+        ]);
+
+        sendError(401, 'Authentication failed', $e->getMessage(), null, $allowFallback);
     }
 }
 
+debugLog("Invalid HTTP method", $_SERVER['REQUEST_METHOD']);
 sendError(405, 'Method not allowed');

@@ -273,33 +273,35 @@
     </main>
 
     <!-- Modern Auth Modal -->
-    <dialog id="auth-modal" class="auth-modal">
-        <div class="auth-header">
-            <button id="auth-close-btn" class="auth-close" aria-label="Close">&times;</button>
-            <h2 id="auth-title" class="auth-title">Welcome Back</h2>
-            <p id="auth-subtitle" class="auth-subtitle">Sign in to continue your adventure</p>
-        </div>
-        <div class="auth-body">
-            <form id="auth-form" class="auth-form">
-                <div class="auth-field">
-                    <label for="username" class="auth-label">Username</label>
-                    <input type="text" id="username" class="auth-input" placeholder="Enter your hero name..." autocomplete="username" required>
-                </div>
-                
-                <button type="submit" id="auth-action-btn" class="auth-button auth-button-primary">
-                    <span class="passkey-icon">🔑</span>Sign In
+<dialog id="auth-modal" class="auth-modal">
+    <div class="auth-header">
+        <button id="auth-close-btn" class="auth-close" aria-label="Close">&times;</button>
+        <h2 id="auth-title" class="auth-title">Welcome Back</h2>
+        <p id="auth-subtitle" class="auth-subtitle">Sign in to continue your adventure</p>
+    </div>
+    <div class="auth-body">
+        <form id="auth-form" class="auth-form">
+            <div class="auth-field">
+                <label for="username" class="auth-label">Username</label>
+                <input type="text" id="username" class="auth-input" placeholder="Enter your hero name..." autocomplete="username" required>
+            </div>
+            <button type="submit" id="auth-action-btn" class="auth-button auth-button-primary">
+                <span class="passkey-icon">🔑</span>Sign In
+            </button>
+        </form>
+        <!-- NEW: Fallback password form container (initially hidden) -->
+        <div id="fallback-pw-form" class="auth-form" style="display:none"></div>
+
+        <div class="auth-switcher">
+            <div class="auth-switcher-text">
+                <button type="button" id="auth-switch-btn" class="auth-button-primary">
+                    Don't have an account? Create one
                 </button>
-            </form>
-            
-            <div class="auth-switcher">
-                <div class="auth-switcher-text">
-                    <button type="button" id="auth-switch-btn" class="auth-button-primary">
-                        Don't have an account? Create one
-                    </button>
-                </div>
             </div>
         </div>
-    </dialog>
+    </div>
+</dialog>
+
 
     <!-- Footer Modals -->
     <dialog id="privacy-modal" class="modal">

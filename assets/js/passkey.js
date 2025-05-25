@@ -187,16 +187,28 @@ class PasskeyAuth {
 
         // Step 3: Verify assertion
         const assertionData = this.formatAssertionForTransmission(assertion);
-        const verifyResponse = await this.fetchWithTimeout('/auth/login.php', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(assertionData)
-        });
+		const verifyResponse = await this.fetchWithTimeout('/auth/login.php', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(assertionData)
+		});
 
-        if (!verifyResponse.ok) {
-            const error = await verifyResponse.json();
-            throw new Error(error.error || 'Login verification failed');
-        }
+
+if (!verifyResponse.ok) {
+    let error = null;
+    try {
+        error = await verifyResponse.json();
+    } catch (e) {
+        error = { error: "Invalid server response", raw: await verifyResponse.text() };
+    }
+    if (error.allow_fallback) {
+        this.promptFallbackPassword(username);
+        return;
+    }
+    throw new Error(error.error || 'Login verification failed');
+}
+
+
 
         const result = await verifyResponse.json();
         this.showStatus('success', '✅ Login successful! Redirecting...');
@@ -212,6 +224,75 @@ class PasskeyAuth {
         const input = document.querySelector('#username');
         return input ? input.value.trim() : '';
     }
+	
+
+promptFallbackPassword(username) {
+    const authModal = document.getElementById('auth-modal');
+    if (!authModal) return;
+
+    // Hide the main auth form
+    const mainForm = authModal.querySelector('#auth-form');
+    if (mainForm) mainForm.style.display = 'none';
+
+    // Show fallback form in the designated container
+    let container = authModal.querySelector('#fallback-pw-form');
+    if (!container) return; // Should always exist with above HTML
+
+    // Only inject once, just update/reset if already present
+    container.innerHTML = `
+        <div class="auth-field">
+            <label for="fallback-password" class="auth-label">Fallback Passphrase</label>
+            <input type="password" id="fallback-password" class="auth-input" autocomplete="current-password" placeholder="Enter your passphrase">
+        </div>
+        <button id="fallback-submit" class="auth-button auth-button-primary">Sign In</button>
+        <button id="fallback-back" class="auth-button" style="margin-left:8px">Back</button>
+        <div id="fallback-error" class="auth-status auth-status-error" style="display:none"></div>
+    `;
+    container.style.display = 'block';
+
+    // Set focus
+    container.querySelector('#fallback-password').focus();
+
+    // Submit handler
+    container.querySelector('#fallback-submit').onclick = async (e) => {
+        e.preventDefault();
+        const pw = container.querySelector('#fallback-password').value;
+        const errorDiv = container.querySelector('#fallback-error');
+        if (!pw) {
+            errorDiv.textContent = "Please enter your passphrase.";
+            errorDiv.style.display = 'block';
+            return;
+        }
+        errorDiv.style.display = 'none';
+
+        // Call fallback login endpoint
+        try {
+            const resp = await fetch('/auth/fallback.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, passphrase: pw })
+            });
+            const result = await resp.json();
+            if (result.ok) {
+                window.location.reload();
+            } else {
+                errorDiv.textContent = result.error || "Login failed.";
+                errorDiv.style.display = 'block';
+            }
+        } catch (err) {
+            errorDiv.textContent = "Login error: " + err.message;
+            errorDiv.style.display = 'block';
+        }
+    };
+
+    // "Back" handler to restore the original form
+    container.querySelector('#fallback-back').onclick = (e) => {
+        e.preventDefault();
+        container.style.display = 'none';
+        if (mainForm) mainForm.style.display = 'block';
+    };
+}
+
 
     validateUsername(username) {
         if (!username) {
@@ -349,37 +430,46 @@ class PasskeyAuth {
         }
     }
 
-    showStatus(type, message) {
-        let statusEl = document.querySelector('#auth-status');
-        
-        if (!statusEl) {
-            statusEl = document.createElement('div');
-            statusEl.id = 'auth-status';
-            statusEl.className = 'auth-status';
-            
-         const form = modal.querySelector('#auth-form');
+showStatus(type, message) {
+    let statusEl = document.querySelector('#auth-status');
+    
+    if (!statusEl) {
+        statusEl = document.createElement('div');
+        statusEl.id = 'auth-status';
+        statusEl.className = 'auth-status';
 
-			if (form) {
-			  form.addEventListener('submit', e => {
-				e.preventDefault();         // ⬅️ stop the dialog from "submitting"
-				if (!this.isProcessing) {
-				  this.handleAuth();        // ⬅️ run your authentication
-				}
-			  });
-			}
+        // FIX: define modal
+        const modal = document.getElementById('auth-modal');
+        if (modal) {
+            const form = modal.querySelector('#auth-form');
+            if (form) {
+                form.addEventListener('submit', e => {
+                    e.preventDefault();
+                    if (!this.isProcessing) {
+                        this.handleAuth();
+                    }
+                });
+            }
+            // Attach statusEl to the modal
+            modal.appendChild(statusEl);
+        } else {
+            // Fallback: just attach to body
+            document.body.appendChild(statusEl);
         }
-
-        statusEl.className = `auth-status auth-status-${type}`;
-        statusEl.textContent = message;
-        statusEl.style.display = 'block';
-
-        // Auto-clear success messages
-        if (type === 'success') {
-            setTimeout(() => this.clearStatus(), 5000);
-        }
-
-        console.log(`Auth ${type.toUpperCase()}: ${message}`);
     }
+
+    statusEl.className = `auth-status auth-status-${type}`;
+    statusEl.textContent = message;
+    statusEl.style.display = 'block';
+
+    // Auto-clear success messages
+    if (type === 'success') {
+        setTimeout(() => this.clearStatus(), 5000);
+    }
+
+    console.log(`Auth ${type.toUpperCase()}: ${message}`);
+}
+
 
     clearStatus() {
         const statusEl = document.querySelector('#auth-status');
@@ -388,15 +478,21 @@ class PasskeyAuth {
         }
     }
 
-    closeModal() {
-        const modal = document.getElementById('auth-modal');
-        if (modal && modal.close) {
-            modal.close();
-        }
-        this.clearStatus();
-        this.isProcessing = false;
-        this.setButtonLoading(false);
+closeModal() {
+    const modal = document.getElementById('auth-modal');
+    if (modal && modal.close) {
+        modal.close();
     }
+    // Reset fallback form view
+    const fallback = modal?.querySelector('#fallback-pw-form');
+    const mainForm = modal?.querySelector('#auth-form');
+    if (fallback) fallback.style.display = 'none';
+    if (mainForm) mainForm.style.display = 'block';
+    this.clearStatus();
+    this.isProcessing = false;
+    this.setButtonLoading(false);
+}
+
 
     async fetchWithTimeout(url, options, timeout = 10000) {
         const controller = new AbortController();

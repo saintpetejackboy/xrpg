@@ -166,3 +166,6 @@ CREATE TABLE IF NOT EXISTS security_events (
 -- Clean up old rate limit entries (run this periodically)
 -- DELETE FROM rate_limits WHERE last_attempt < DATE_SUB(NOW(), INTERVAL 24 HOUR);
 -- DELETE FROM security_events WHERE created_at < DATE_SUB(NOW(), INTERVAL 30 DAY);
+
+CREATE TABLE IF NOT EXISTS user_passkeys ( id INT AUTO_INCREMENT PRIMARY KEY, user_id INT NOT NULL, credential_id VARBINARY(128) NOT NULL, public_key VARBINARY(512) NOT NULL,
+ device_name VARCHAR(64) DEFAULT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, last_used DATETIME NULL );
