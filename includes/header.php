@@ -51,6 +51,6 @@ if (!isset($preferences)) {
 </head>
 <body class="authenticated">
     <!-- Fixed Theme Toggle -->
-    <button id="theme-toggle" class="theme-toggle-fixed" title="Toggle light/dark mode">
+    <button id="theme-toggle" class="theme-toggle-fixed" title="Toggle light/dark mode" style="display: none;">
         <?= $preferences['theme_mode'] === 'dark' ? '🌞' : '🌙' ?>
     </button>

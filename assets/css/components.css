@@ -752,8 +752,7 @@ input[type="color"]::-webkit-color-swatch {
 /* Floating Action Button */
 .fab {
   position: fixed;
-  bottom: var(--space-xl);
-  right: var(--space-xl);
+
   width: 3.5rem;
   height: 3.5rem;
   border-radius: 50%;
@@ -955,13 +954,8 @@ input[type="color"]::-webkit-color-swatch {
 
 /* Responsive Adjustments */
 @media (max-width: 768px) {
-  .side-nav {
-    transform: translateX(-100%);
-  }
-  
-  .side-nav.expanded {
-    transform: translateX(0);
-  }
+ .header-title { display: none; }
+ .header-actions { margin-left: 20%; }
   
   .main-header,
   .main-content {

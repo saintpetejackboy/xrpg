@@ -1,7 +1,7 @@
 <?php
 // /players/index.php - Main game dashboard (REFACTORED VERSION)
 
-session_start();
+
 require_once __DIR__ . '/../config/environment.php';
 
 // Check if user is logged in
@@ -69,9 +69,30 @@ $preferences = loadUserPreferences($pdo, $userId);
 
 // Get recent activity
 try {
-    $stmt = $pdo->prepare('SELECT * FROM auth_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 5');
-    $stmt->execute([$userId]);
-    $recentActivity = $stmt->fetchAll();
+
+    // pull the last 10 mixed events from user_activity + auth_log in real time order
+$sql = "
+    SELECT created_at, event_type, description
+    FROM (
+        SELECT created_at, event_type, description
+          FROM user_activity
+         WHERE user_id = :uid
+
+        UNION ALL
+
+        SELECT created_at, event_type, description
+          FROM auth_log
+         WHERE user_id = :uid
+    ) AS combined
+    ORDER BY created_at DESC
+    LIMIT 10
+";
+
+$stmt = $pdo->prepare($sql);
+$stmt->bindValue(':uid', $userId, PDO::PARAM_INT);
+$stmt->execute();
+$recentActivity = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (Exception $e) {
     $recentActivity = [];
 }
@@ -105,175 +126,7 @@ if ($characterDetails) {
 $pageTitle = 'XRPG - Dashboard';
 $currentPage = 'dashboard';
 $headerTitle = 'XRPG - Dashboard';
-$footerInfo = 'XRPG Dashboard • Character: ' . $username . ' • Level ' . $stats['level'] . ' ' . htmlspecialchars($characterDetails['race_name']) . ' ' . htmlspecialchars($characterDetails['class_name']);
-
-// Additional CSS for this page
-$additionalCSS = '
-.dashboard-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2rem;
-}
-
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 1rem;
-}
-
-.stat-card {
-    text-align: center;
-    padding: 1rem;
-}
-
-.stat-value {
-    font-size: 2rem;
-    font-weight: bold;
-    color: var(--color-accent);
-}
-
-.stat-label {
-    color: var(--color-muted);
-    font-size: 0.875rem;
-    margin-top: 0.25rem;
-}
-
-.progress-bar {
-    width: 100%;
-    height: 8px;
-    background: var(--color-surface-alt);
-    border-radius: calc(var(--user-radius) * 0.25);
-    overflow: hidden;
-    margin: 0.5rem 0;
-}
-
-.progress-fill {
-    height: 100%;
-    background: var(--gradient-accent);
-    transition: width 0.3s ease;
-}
-
-.activity-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem;
-    margin-bottom: 0.5rem;
-    background: var(--color-surface-alt);
-    border-radius: calc(var(--user-radius) * 0.5);
-}
-
-.activity-time {
-    color: var(--color-muted);
-    font-size: 0.75rem;
-}
-
-.health-bar {
-    background: linear-gradient(90deg, #ff4444, #ffaa00, #44ff44);
-}
-
-.exp-bar {
-    background: var(--gradient-accent);
-}
-
-.action-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
-    margin-top: 1rem;
-}
-
-.quick-action {
-    text-align: center;
-    padding: 1.5rem 1rem;
-    font-size: 0.875rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.quick-action .icon {
-    font-size: 2rem;
-}
-
-.welcome-banner {
-    background: var(--gradient-accent);
-    color: white;
-    text-align: center;
-    padding: 2rem;
-    border-radius: var(--user-radius);
-    margin-bottom: 2rem;
-}
-
-.character-info {
-    background: var(--color-surface-alt);
-    padding: 1.5rem;
-    border-radius: var(--user-radius);
-    margin-bottom: 2rem;
-}
-
-.character-detail {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-border);
-}
-
-.character-detail:last-child {
-    border-bottom: none;
-}
-
-.character-label {
-    font-weight: 600;
-    color: var(--color-text);
-}
-
-.character-value {
-    color: var(--color-accent);
-    font-weight: bold;
-}
-
-.logout-section {
-    border-top: 1px solid var(--color-border);
-    padding-top: 1rem;
-    margin-top: 1rem;
-}
-
-.change-cooldown {
-    color: var(--color-muted);
-    font-size: 0.75rem;
-    font-style: italic;
-}
-
-.enhanced-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    gap: 0.75rem;
-    margin-top: 1rem;
-}
-
-.enhanced-stat {
-    text-align: center;
-    padding: 0.75rem;
-    background: var(--color-surface-alt);
-    border-radius: calc(var(--user-radius) * 0.5);
-}
-
-.enhanced-stat-value {
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: var(--color-accent);
-}
-
-.enhanced-stat-name {
-    color: var(--color-muted);
-    font-size: 0.75rem;
-    margin-top: 0.25rem;
-}
-';
+$footerInfo =  $username . ' • Level ' . $stats['level'] . ' ' . htmlspecialchars($characterDetails['race_name']) . ' ' . htmlspecialchars($characterDetails['class_name']);
 
 // Additional global JS variables
 $additionalGlobalJS = '
@@ -285,7 +138,7 @@ window.canChangeJob = ' . ($canChangeJob ? 'true' : 'false') . ';
 include __DIR__ . '/../includes/header.php';
 include __DIR__ . '/../includes/navigation.php';
 ?>
-
+<link rel="stylesheet" href="players/css/dashboard.css">
 <!-- Main Content -->
 <main class="main-content">
     <!-- Welcome Banner -->
@@ -418,10 +271,11 @@ include __DIR__ . '/../includes/navigation.php';
                     <span>Settings</span>
                 </button>
                 
-                <button class="button quick-action" onclick="openMap()">
-                    <span class="icon">🗺️</span>
-                    <span>World Map</span>
+                <button class="button quick-action" onclick="XRPGPlayer.goToSettings()">
+                    <span class="icon">⚙️</span>
+                    <span>Settings</span>
                 </button>
+
                 
                 <?php if ($canChangeClass || $canChangeJob): ?>
                     <button class="button quick-action" onclick="changeClassJob()" style="background: rgba(255, 193, 7, 0.2); border-color: rgba(255, 193, 7, 0.4);">
@@ -453,7 +307,7 @@ include __DIR__ . '/../includes/navigation.php';
                 </div>
             <?php else: ?>
                 <?php foreach ($recentActivity as $activity): ?>
-                    <div class="activity-item">
+                    <div class="activity-item" style="max-height: 40vh; overflow-y: scroll;">
                         <span>
                             <?php
                             $icon = match($activity['event_type']) {
@@ -475,7 +329,7 @@ include __DIR__ . '/../includes/navigation.php';
         <!-- Game News/Updates -->
         <div class="card" style="padding: 1.5rem;">
             <h3 style="margin-top: 0;">📰 Game Updates</h3>
-            <div id="dashboard-updates">
+            <div id="dashboard-updates" style="max-height: 40vh; overflow-y: scroll;">
                 <div class="activity-item">
                     <span>⏳ Loading latest updates...</span>
                     <span class="activity-time">Now</span>

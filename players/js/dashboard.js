@@ -23,46 +23,53 @@
     }
     
     // Load dashboard updates
-    async function loadDashboardUpdates() {
-        try {
-            const response = await fetch('/api/updates.php');
-            if (response.ok) {
-                const data = await response.json();
-                const container = document.getElementById('dashboard-updates');
-                
-                if (data.updates && data.updates.length > 0) {
-                    container.innerHTML = data.updates.slice(0, 3).map(update => `
-                        <div class="activity-item">
-                            <span>${update.emoji} ${update.message}</span>
-                            <span class="activity-time">${update.timeAgo}</span>
-                        </div>
-                    `).join('');
-                } else {
-                    container.innerHTML = `
-                        <div class="activity-item">
-                            <span>🎮 Welcome to XRPG!</span>
-                            <span class="activity-time">Now</span>
-                        </div>
-                    `;
-                }
-            }
-        } catch (error) {
-            console.error('Failed to load updates:', error);
-            // Fallback content
-            const container = document.getElementById('dashboard-updates');
-            if (container) {
-                container.innerHTML = `
-                    <div class="activity-item">
-                        <span>🎮 Welcome to XRPG!</span>
-                        <span class="activity-time">Now</span>
-                    </div>
-                    <div class="activity-item">
-                        <span>⚙️ Customize your theme in Settings</span>
-                        <span class="activity-time">Tip</span>
-                    </div>
-                `;
-            }
+async function loadDashboardUpdates() {
+    const container = document.getElementById('dashboard-updates');
+    try {
+        const response = await fetch('/api/updates.php');
+
+        if (!response.ok) {
+            // log status + full text of the 500 response
+            const text = await response.text();
+            console.error(`API error (${response.status}):`, text);
+            throw new Error(`Server returned ${response.status}`);
         }
+
+        const data = await response.json();
+        if (data.updates && data.updates.length > 0) {
+            container.innerHTML = data.updates
+                .slice(0, 50)
+                .map(u => `
+                    <div class="activity-item">
+                        <span>${u.emoji} ${u.message}</span>
+                        <span class="activity-time">${u.timeAgo}</span>
+                    </div>`)
+                .join('');
+        } else {
+            // no updates → welcome
+            container.innerHTML = `
+                <div class="activity-item">
+                    <span>🎮 Welcome to XRPG!</span>
+                    <span class="activity-time">Now</span>
+                </div>`;
+        }
+
+    } catch (err) {
+        console.error('Failed to load updates:', err);
+        // fallback UI
+        if (container) {
+            container.innerHTML = `
+                <div class="activity-item">
+                    <span>🎮 Welcome to XRPG!</span>
+                    <span class="activity-time">Now</span>
+                </div>
+                <div class="activity-item">
+                    <span>⚙️ Customize your theme in Settings</span>
+                    <span class="activity-time">Tip</span>
+                </div>`;
+        }
+    }
+
     }
     
     // Auto-refresh stats periodically (placeholder for future implementation)

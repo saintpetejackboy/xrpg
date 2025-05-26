@@ -107,6 +107,8 @@
     transition: all 0.2s ease;
     position: relative;
     overflow: hidden;
+	margin-top: 20px;
+	width: 100%;
 }
 
 .auth-button-primary {
@@ -118,6 +120,7 @@
 .auth-button-primary:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 20px rgba(var(--color-accent-rgb), 0.4);
+	opacity: 0.5;
 }
 
 .auth-button-primary:active {
@@ -183,19 +186,19 @@
 }
 
 .auth-status-success {
-    background: rgba(46, 204, 113, 0.1);
+    background: rgba(46, 204, 113, 0.8);
     border: 1px solid rgba(46, 204, 113, 0.3);
     color: #2ecc71;
 }
 
 .auth-status-error {
-    background: rgba(231, 76, 60, 0.1);
+    background: rgba(231, 76, 60, 0.8);
     border: 1px solid rgba(231, 76, 60, 0.3);
     color: #e74c3c;
 }
 
 .auth-status-warning {
-    background: rgba(241, 196, 15, 0.1);
+    background: rgba(241, 196, 15, 0.8);
     border: 1px solid rgba(241, 196, 15, 0.3);
     color: #f1c40f;
 }

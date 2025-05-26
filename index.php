@@ -7,7 +7,6 @@ error_reporting(E_ALL);
 // XRPG Universal Router - index.php
 // ---------------------------------
 // All site entry traffic comes through here. This handles routing based on authentication state.
-
 session_start();
 require_once __DIR__ . '/config/environment.php';
 
@@ -28,6 +27,15 @@ if (str_starts_with($path, '/api/')) {
     switch ($path) {
         case '/api/updates.php':
             require __DIR__ . '/api/updates.php';
+            exit;
+        case '/api/equipment.php':
+            require __DIR__ . '/api/equipment.php';
+            exit;
+        case '/api/shop.php':
+            require __DIR__ . '/api/shop.php';
+            exit;
+        case '/api/items.php':
+            require __DIR__ . '/api/items.php';
             exit;
         default:
             http_response_code(404);

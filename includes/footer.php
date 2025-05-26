@@ -1,16 +1,6 @@
 <?php
 // /includes/footer.php - Common footer component
 
-if (!isset($user)) {
-    $user = $_SESSION['user'] ?? null;
-}
-if (is_array($user) && isset($user['username'])) {
-    $username = htmlspecialchars($user['username']);
-} elseif (is_string($user)) {
-    $username = htmlspecialchars($user);
-} else {
-    $username = 'Guest';
-}
 
 $footerInfo = $footerInfo ?? 'XRPG Dashboard';
 ?>
@@ -26,7 +16,7 @@ $footerInfo = $footerInfo ?? 'XRPG Dashboard';
                 <?php endif; ?>
             </div>
             <div class="footer-info">
-                <p><?= htmlspecialchars($footerInfo) ?> • Player: <?= $username ?></p>
+                <p><?= htmlspecialchars($footerInfo) ?> </p>
                 <p>&copy; 2025 XRPG. All rights reserved.</p>
             </div>
         </footer>

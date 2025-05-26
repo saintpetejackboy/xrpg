@@ -147,17 +147,17 @@ window.XRPGPlayer = (function() {
         statusEl.id = 'xrpg-status-message';
         
         const colors = {
-            success: { bg: 'rgba(76, 175, 80, 0.1)', border: 'rgba(76, 175, 80, 0.3)', text: '#4caf50' },
-            error: { bg: 'rgba(244, 67, 54, 0.1)', border: 'rgba(244, 67, 54, 0.3)', text: '#f44336' },
-            warning: { bg: 'rgba(255, 193, 7, 0.1)', border: 'rgba(255, 193, 7, 0.3)', text: '#ffc107' },
-            info: { bg: 'rgba(33, 150, 243, 0.1)', border: 'rgba(33, 150, 243, 0.3)', text: '#2196f3' }
+            success: { bg: 'rgba(76, 175, 80, 0.3)', border: 'rgba(76, 175, 80, 0.3)', text: '#4caf50' },
+            error: { bg: 'rgba(244, 67, 54, 0.3)', border: 'rgba(244, 67, 54, 0.3)', text: '#f44336' },
+            warning: { bg: 'rgba(255, 193, 7, 0.3)', border: 'rgba(255, 193, 7, 0.3)', text: '#ffc107' },
+            info: { bg: 'rgba(33, 150, 243, 0.3)', border: 'rgba(33, 150, 243, 0.3)', text: '#2196f3' }
         };
         
         const color = colors[type] || colors.info;
         
         statusEl.style.cssText = `
             position: fixed;
-            top: 20px;
+            bottom: 20px;
             right: 20px;
             background: ${color.bg};
             border: 1px solid ${color.border};

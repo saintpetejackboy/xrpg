@@ -170,14 +170,13 @@ try {
     // Log the settings change
     try {
         $stmt = $pdo->prepare('
-            INSERT INTO auth_log (user_id, event_type, description, ip_address, user_agent, created_at) 
+            INSERT INTO auth_log (user_id, event_type, description, user_agent, created_at) 
             VALUES (?, ?, ?, ?, ?, NOW())
         ');
         $stmt->execute([
             $userId,
             'settings_update',
             'User updated theme preferences',
-            $_SERVER['REMOTE_ADDR'] ?? 'unknown',
             $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
         ]);
     } catch (Exception $e) {
